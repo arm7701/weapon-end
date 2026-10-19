@@ -1,0 +1,16 @@
+.git
+.gitignore
+.vscode
+.DS_Store
+.env
+.venv/
+**/__pycache__/
+**/*.pyc
+**/*.egg-info/
+doc/
+docs/
+tests/
+assets/
+building-seg.pt
+*.pt
+README.md

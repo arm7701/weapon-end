@@ -1,0 +1,16 @@
+ALTER TABLE target_cards ADD COLUMN target_type TEXT NOT NULL DEFAULT 'BUILDING';
+ALTER TABLE target_cards ADD COLUMN target_subtype TEXT NOT NULL DEFAULT 'UNKNOWN';
+ALTER TABLE target_cards ADD COLUMN floor_count TEXT NOT NULL DEFAULT '';
+ALTER TABLE target_cards ADD COLUMN width_m REAL;
+ALTER TABLE target_cards ADD COLUMN length_m REAL;
+ALTER TABLE target_cards ADD COLUMN height_m REAL;
+ALTER TABLE target_cards ADD COLUMN desired_model_result TEXT NOT NULL DEFAULT 'STRUCTURAL FAILURE';
+ALTER TABLE target_cards ADD COLUMN coordinate_error_m REAL;
+ALTER TABLE target_cards ADD COLUMN data_source TEXT NOT NULL DEFAULT 'manual';
+ALTER TABLE target_cards ADD COLUMN cep REAL;
+ALTER TABLE target_cards ADD COLUMN target_pk REAL;
+ALTER TABLE target_cards ADD COLUMN reference_pk REAL;
+ALTER TABLE target_cards ADD COLUMN resistance TEXT NOT NULL DEFAULT '';
+ALTER TABLE target_cards ADD COLUMN capacity TEXT NOT NULL DEFAULT '';
+ALTER TABLE target_cards ADD COLUMN damage_fit TEXT NOT NULL DEFAULT '';
+ALTER TABLE target_cards ADD COLUMN model_version TEXT NOT NULL DEFAULT '';

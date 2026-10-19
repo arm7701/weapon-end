@@ -1,0 +1,14 @@
+# ConfigMap สำหรับ namespace ที่มีอยู่แล้วบน Rancher
+# cluster: prod-01  project: swc-strategic  namespace: weaponeering-frontend-uat
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: weaponeering-frontend-uat-config
+  namespace: weaponeering-frontend-uat
+  labels:
+    app: weaponeering-frontend-uat
+    env: uat
+    project: swc-strategic
+data:
+  VITE_API_BASE_URL: "https://weaponeering-api-uat.rtaf.mi.th/api"
+  VITE_BASE_PATH: "/"

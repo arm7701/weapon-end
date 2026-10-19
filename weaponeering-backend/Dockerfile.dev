@@ -1,0 +1,45 @@
+FROM python:3.12-slim
+
+RUN sed -i \
+    -e 's|http://deb.debian.org/debian-security|http://security.debian.org/debian-security|g' \
+    -e 's|http://deb.debian.org/debian|http://mirror.ku.ac.th/debian|g' \
+    /etc/apt/sources.list.d/debian.sources
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    DEBIAN_FRONTEND=noninteractive \
+    APP_HOME=/app \
+    PYTHONPATH=/app/src
+
+WORKDIR $APP_HOME
+
+RUN apt-get update -o Acquire::Retries=3 \
+    && apt-get install -y --no-install-recommends \
+        gcc \
+        libpq-dev \
+        curl \
+        libgl1 \
+        libglib2.0-0 \
+        libxcb1 \
+        libsm6 \
+        libxext6 \
+        libxrender1 \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements-api.txt $APP_HOME/requirements-api.txt
+COPY requirements-detection.txt $APP_HOME/requirements-detection.txt
+RUN pip install --upgrade pip \
+    && pip install --no-cache-dir -r requirements-api.txt \
+    && pip install --no-cache-dir -r requirements-detection.txt \
+    && pip install --no-cache-dir opencv-python-headless
+
+COPY alembic.ini $APP_HOME/alembic.ini
+COPY alembic $APP_HOME/alembic
+COPY src $APP_HOME/src
+COPY entrypoint-dev.sh $APP_HOME/entrypoint-dev.sh
+RUN chmod +x $APP_HOME/entrypoint-dev.sh
+
+EXPOSE 8000
+
+CMD ["sh", "/app/entrypoint-dev.sh"]

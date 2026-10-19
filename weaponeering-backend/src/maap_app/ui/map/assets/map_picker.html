@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>MAP_PICKER_INIT</title>
+  <link rel="stylesheet" href="leaflet/leaflet.css" />
+  <script src="leaflet/leaflet.js"></script>
+  <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+  <style>
+    html, body, #map {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      background: #0a1018;
+      overflow: hidden;
+    }
+    .leaflet-container {
+      background: #0a1018;
+      cursor: crosshair;
+    }
+    #hint {
+      position: absolute;
+      left: 10px;
+      bottom: 10px;
+      z-index: 1000;
+      padding: 6px 10px;
+      border-radius: 6px;
+      background: rgba(10, 16, 24, 0.88);
+      border: 1px solid #2a3a4f;
+      color: #94a3b8;
+      font: 11px/1.4 sans-serif;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <div id="hint">คลิกบนแผนที่เพื่อใส่ Lat/Lng ลงฟอร์ม</div>
+  <script>
+    let maapBridge = null;
+
+    function syncPick(lat, lng) {
+      if (maapBridge && typeof maapBridge.pickCoord === "function") {
+        maapBridge.pickCoord(lat, lng);
+      }
+      document.title = "MAP_PICK|" + lat + "|" + lng;
+    }
+
+    if (typeof qt !== "undefined" && qt.webChannelTransport) {
+      new QWebChannel(qt.webChannelTransport, function(channel) {
+        maapBridge = channel.objects.bridge;
+        document.title = "MAP_PICKER_READY";
+      });
+    }
+
+    const map = L.map("map", {
+      zoomControl: true,
+      attributionControl: true,
+    }).setView([15.0, 101.0], 6);
+
+    L.tileLayer(
+      "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+      {
+        maxZoom: 19,
+        attribution: "Tiles &copy; Esri",
+      }
+    ).addTo(map);
+
+    let marker = null;
+
+    function setMarker(lat, lng) {
+      if (marker) {
+        map.removeLayer(marker);
+      }
+      marker = L.circleMarker([lat, lng], {
+        radius: 8,
+        color: "#0f172a",
+        weight: 2,
+        fillColor: "#34d399",
+        fillOpacity: 0.95,
+      }).addTo(map);
+    }
+
+    map.on("click", function(event) {
+      const lat = event.latlng.lat;
+      const lng = event.latlng.lng;
+      setMarker(lat, lng);
+      syncPick(lat, lng);
+    });
+
+    window.maapPicker = {
+      setView(lat, lng, zoom) {
+        const z = typeof zoom === "number" ? zoom : 10;
+        map.setView([lat, lng], z);
+        if (Number.isFinite(lat) && Number.isFinite(lng)) {
+          setMarker(lat, lng);
+        }
+      },
+      invalidateSize() {
+        setTimeout(function() {
+          map.invalidateSize(true);
+        }, 80);
+        setTimeout(function() {
+          map.invalidateSize(true);
+        }, 250);
+      },
+    };
+
+    document.title = "MAP_PICKER_READY";
+  </script>
+</body>
+</html>

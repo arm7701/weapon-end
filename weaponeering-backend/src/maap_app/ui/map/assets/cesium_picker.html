@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <title>MAP_PICKER_INIT</title>
+  <link
+    rel="stylesheet"
+    href="https://cesium.com/downloads/cesiumjs/releases/1.119/Build/Cesium/Widgets/widgets.css"
+  />
+  <script src="https://cesium.com/downloads/cesiumjs/releases/1.119/Build/Cesium/Cesium.js"></script>
+  <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+  <style>
+    html, body, #cesiumContainer {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: #0a1018;
+    }
+    .cesium-viewer .cesium-widget-credits {
+      font-size: 9px;
+      opacity: 0.55;
+    }
+    #hint {
+      position: absolute;
+      left: 10px;
+      bottom: 10px;
+      z-index: 1000;
+      padding: 6px 10px;
+      border-radius: 6px;
+      background: rgba(10, 16, 24, 0.88);
+      border: 1px solid #2a3a4f;
+      color: #94a3b8;
+      font: 11px/1.4 sans-serif;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="cesiumContainer"></div>
+  <div id="hint">คลิกบนแผนที่เพื่อใส่ Lat/Lng · มีเส้นแบ่งเขตประเทศไทย</div>
+  <script>
+    const DEFAULT_LAT = 15.0;
+    const DEFAULT_LNG = 101.0;
+    const BORDER_GEOJSON_URL = "./borders/thailand_adm0_simplified.geojson";
+
+    const viewer = new Cesium.Viewer("cesiumContainer", {
+      animation: false,
+      timeline: false,
+      fullscreenButton: false,
+      vrButton: false,
+      geocoder: false,
+      homeButton: false,
+      infoBox: false,
+      selectionIndicator: false,
+      sceneModePicker: false,
+      baseLayerPicker: false,
+      navigationHelpButton: false,
+      terrainProvider: new Cesium.EllipsoidTerrainProvider(),
+    });
+
+    viewer.imageryLayers.removeAll();
+    viewer.imageryLayers.addImageryProvider(
+      new Cesium.UrlTemplateImageryProvider({
+        url: "https://mt{s}.google.com/vt/lyrs=y&hl=en&x={x}&y={y}&z={z}",
+        subdomains: ["0", "1", "2", "3"],
+        maximumLevel: 19,
+      })
+    );
+
+    const borderSource = new Cesium.CustomDataSource("borders");
+    const pickSource = new Cesium.CustomDataSource("pick");
+    viewer.dataSources.add(borderSource);
+    viewer.dataSources.add(pickSource);
+
+    let maapBridge = null;
+    if (typeof qt !== "undefined" && qt.webChannelTransport) {
+      new QWebChannel(qt.webChannelTransport, function(channel) {
+        maapBridge = channel.objects.bridge;
+        document.title = "MAP_PICKER_READY";
+      });
+    }
+
+    function syncPick(lat, lng) {
+      if (maapBridge && typeof maapBridge.pickCoord === "function") {
+        maapBridge.pickCoord(lat, lng);
+      }
+      document.title = "MAP_PICK|" + lat + "|" + lng;
+    }
+
+    function addBorderPolyline(coordinates, color) {
+      if (!coordinates || coordinates.length < 2) {
+        return;
+      }
+      const positions = [];
+      for (let i = 0; i < coordinates.length; i += 1) {
+        const lng = Number(coordinates[i][0]);
+        const lat = Number(coordinates[i][1]);
+        if (!Number.isFinite(lng) || !Number.isFinite(lat)) {
+          continue;
+        }
+        positions.push(Cesium.Cartesian3.fromDegrees(lng, lat, 0));
+      }
+      if (positions.length < 2) {
+        return;
+      }
+      borderSource.entities.add({
+        polyline: {
+          positions: positions,
+          width: 2,
+          clampToGround: true,
+          material: color,
+        },
+      });
+    }
+
+    function addBorderFeatures(geojson) {
+      const borderColor = Cesium.Color.fromCssColorString("#f8fafc").withAlpha(0.9);
+      const features = (geojson && geojson.features) || [];
+      for (let i = 0; i < features.length; i += 1) {
+        const geometry = features[i].geometry;
+        if (!geometry) {
+          continue;
+        }
+        if (geometry.type === "LineString") {
+          addBorderPolyline(geometry.coordinates, borderColor);
+        } else if (geometry.type === "MultiLineString") {
+          const lines = geometry.coordinates || [];
+          for (let j = 0; j < lines.length; j += 1) {
+            addBorderPolyline(lines[j], borderColor);
+          }
+        } else if (geometry.type === "Polygon") {
+          const rings = geometry.coordinates || [];
+          if (rings.length > 0) {
+            addBorderPolyline(rings[0], borderColor);
+          }
+        } else if (geometry.type === "MultiPolygon") {
+          const polygons = geometry.coordinates || [];
+          for (let j = 0; j < polygons.length; j += 1) {
+            const rings = polygons[j] || [];
+            if (rings.length > 0) {
+              addBorderPolyline(rings[0], borderColor);
+            }
+          }
+        }
+      }
+    }
+
+    fetch(BORDER_GEOJSON_URL)
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error("HTTP " + response.status);
+        }
+        return response.json();
+      })
+      .then((geojson) => addBorderFeatures(geojson))
+      .catch((error) => console.warn("Failed to load country borders:", error));
+
+    function setPickMarker(lat, lng) {
+      pickSource.entities.removeAll();
+      pickSource.entities.add({
+        position: Cesium.Cartesian3.fromDegrees(lng, lat, 0),
+        point: {
+          pixelSize: 12,
+          color: Cesium.Color.fromCssColorString("#34d399"),
+          outlineColor: Cesium.Color.fromCssColorString("#0f172a"),
+          outlineWidth: 2,
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
+      });
+    }
+
+    function pickLatLngFromClick(click) {
+      const cartesian = viewer.camera.pickEllipsoid(
+        click.position,
+        viewer.scene.globe.ellipsoid
+      );
+      if (!cartesian) {
+        return null;
+      }
+      const cartographic = Cesium.Cartographic.fromCartesian(cartesian);
+      return [
+        Cesium.Math.toDegrees(cartographic.latitude),
+        Cesium.Math.toDegrees(cartographic.longitude),
+      ];
+    }
+
+    const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
+    handler.setInputAction((click) => {
+      const point = pickLatLngFromClick(click);
+      if (!point) {
+        return;
+      }
+      setPickMarker(point[0], point[1]);
+      syncPick(point[0], point[1]);
+    }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+
+    viewer.camera.setView({
+      destination: Cesium.Cartesian3.fromDegrees(DEFAULT_LNG, DEFAULT_LAT, 1200000),
+    });
+
+    window.maapPicker = {
+      setView(lat, lng, zoom) {
+        const height = typeof zoom === "number" && zoom > 0
+          ? Math.max(800, 12000000 / Math.pow(2, zoom - 1))
+          : 280000;
+        viewer.camera.flyTo({
+          destination: Cesium.Cartesian3.fromDegrees(lng, lat, height),
+          duration: 0.35,
+        });
+        if (Number.isFinite(lat) && Number.isFinite(lng)) {
+          setPickMarker(lat, lng);
+        }
+      },
+      invalidateSize() {
+        viewer.resize();
+        viewer.scene.requestRender();
+      },
+    };
+
+    document.title = "MAP_PICKER_READY";
+  </script>
+</body>
+</html>

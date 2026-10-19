@@ -1,0 +1,30 @@
+# Docker Compose สำหรับรันฐานข้อมูล PostgreSQL (pgpool) พร้อมข้อมูลเริ่มต้น (Migrations + JMEM + Sample Targets)
+services:
+  pgpool:
+    image: postgres:17
+    container_name: pgpool
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-weaponeering}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - pgpool_data:/var/lib/postgresql/data
+      - ./database/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-weaponeering}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - shared-postgres-network
+
+volumes:
+  pgpool_data:
+
+networks:
+  shared-postgres-network:
+    name: shared-postgres-network
+    driver: bridge

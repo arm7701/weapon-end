@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>MAP_INIT</title>
+  <link rel="stylesheet" href="leaflet/leaflet.css" />
+  <script src="leaflet/leaflet.js"></script>
+  <style>
+    body { margin: 0; padding: 0; background-color: #020B07; }
+    #map { width: 100vw; height: 100vh; cursor: crosshair; }
+    .target-center-dot {
+      width: 6px;
+      height: 6px;
+      background: #FF0000;
+      border: 2px solid #FFFFFF;
+      border-radius: 50%;
+      position: absolute;
+      top: -4px;
+      left: -4px;
+      box-shadow: 0 0 8px #FF0000;
+    }
+    .target-marker-label {
+      position: absolute;
+      top: -26px;
+      left: 6px;
+      background-color: rgba(7, 17, 11, 0.9);
+      color: #00FF66;
+      border: 1px solid #00AA55;
+      padding: 2px 6px;
+      font-weight: bold;
+      font-size: 11px;
+      white-space: nowrap;
+      border-radius: 3px;
+    }
+
+    .leaflet-control-attribution {
+      font-size: 9px;
+      background: rgba(2, 11, 7, 0.8) !important;
+      color: #5a8a6a !important;
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <script>
+    const DEFAULT_CENTER = [16.8123, 100.1234];
+    const DEFAULT_ZOOM = 16;
+
+    const map = L.map("map", {
+      center: DEFAULT_CENTER,
+      zoom: DEFAULT_ZOOM,
+      zoomControl: true,
+      attributionControl: true,
+    });
+
+    L.tileLayer("https://mt{s}.google.com/vt/lyrs=y&hl=en&x={x}&y={y}&z={z}", {
+      subdomains: ["0", "1", "2", "3"],
+      maxZoom: 22,
+      maxNativeZoom: 19,
+    }).addTo(map);
+
+    let markerIdCounter = 0;
+    const markers = {};
+
+    let currentLayerSpec = {
+      source: "กรอกเอง / แผนที่",
+      coordinateError: 25,
+      analysisBoundary: 250,
+      referenceRisk: 150,
+      observationRange: 500,
+      reviewArea: 120,
+      effectSummary: "ไม่มีรายละเอียดผลกระทบอ้างอิง",
+      effectRadii: [],
+      confidence: 0.75,
+      timestamp: "ไม่ระบุ",
+    };
+
+    function setMapLayerSpec(
+      source,
+      coordinateError,
+      analysisBoundary,
+      referenceRisk,
+      observationRange,
+      reviewArea,
+      effectSummary,
+      effectRadii,
+      confidence,
+      timestamp,
+    ) {
+      currentLayerSpec = {
+        source: source || "กรอกเอง / แผนที่",
+        coordinateError: Math.max(0, coordinateError || 0),
+        analysisBoundary: Math.max(0, analysisBoundary || 0),
+        referenceRisk: Math.max(0, referenceRisk || 0),
+        observationRange: Math.max(0, observationRange || 0),
+        reviewArea: Math.max(0, reviewArea || 0),
+        effectSummary: effectSummary || "ไม่มีรายละเอียดผลกระทบอ้างอิง",
+        effectRadii: Array.isArray(effectRadii) ? effectRadii : [],
+        confidence: confidence || 0,
+        timestamp: timestamp || "ไม่ระบุ",
+      };
+    }
+
+    function updateMarkerNumbers() {
+      let count = 1;
+      const sortedIds = Object.keys(markers).sort((a, b) => Number(a) - Number(b));
+      for (let i = 0; i < sortedIds.length; i++) {
+        const id = sortedIds[i];
+        const mData = markers[id];
+
+        const newIcon = L.divIcon({
+          className: "custom-div-icon",
+          html:
+            "<div class='target-center-dot'></div>" +
+            "<div class='target-marker-label'>เป้า #" + count + "</div>",
+          iconSize: [0, 0],
+          iconAnchor: [0, 0],
+        });
+        mData.marker.setIcon(newIcon);
+        count++;
+      }
+    }
+
+    function deleteMarker(id) {
+      if (!markers[id]) {
+        return;
+      }
+      map.removeLayer(markers[id].marker);
+      map.removeLayer(markers[id].coordError);
+      map.removeLayer(markers[id].analysisBoundary);
+      map.removeLayer(markers[id].referenceRisk);
+      map.removeLayer(markers[id].observationRange);
+      map.removeLayer(markers[id].reviewArea);
+      if (markers[id].effectCircles) {
+        markers[id].effectCircles.forEach((circle) => map.removeLayer(circle));
+      }
+      delete markers[id];
+      updateMarkerNumbers();
+      document.title = "LOG|[MAP] ลบชั้นข้อมูลของเป้าหมายแล้ว";
+    }
+
+    function clearAllMarkers() {
+      for (const id in markers) {
+        map.removeLayer(markers[id].marker);
+        map.removeLayer(markers[id].coordError);
+        map.removeLayer(markers[id].analysisBoundary);
+        map.removeLayer(markers[id].referenceRisk);
+        map.removeLayer(markers[id].observationRange);
+        map.removeLayer(markers[id].reviewArea);
+        if (markers[id].effectCircles) {
+          markers[id].effectCircles.forEach((circle) => map.removeLayer(circle));
+        }
+      }
+      for (const id in markers) {
+        delete markers[id];
+      }
+      document.title = "LOG|[MAP] ล้างชั้นข้อมูลทั้งหมดแล้ว";
+    }
+
+    function createMarkerAt(lat, lon) {
+      const id = markerIdCounter++;
+      const m = L.marker([lat, lon]).addTo(map);
+
+      const observationRange = L.circle([lat, lon], {
+        color: "#66FF99",
+        fillColor: "#66FF99",
+        fillOpacity: 0.03,
+        weight: 1.2,
+        dashArray: "8, 8",
+        radius: currentLayerSpec.observationRange,
+      }).addTo(map);
+
+      const analysisBoundary = L.circle([lat, lon], {
+        color: "#00FFFF",
+        fillColor: "#00FFFF",
+        fillOpacity: 0.04,
+        weight: 1.5,
+        dashArray: "4, 6",
+        radius: currentLayerSpec.analysisBoundary,
+      }).addTo(map);
+
+      const referenceRisk = L.circle([lat, lon], {
+        color: "#FFCC00",
+        fillColor: "#FFCC00",
+        fillOpacity: 0.09,
+        weight: 1.8,
+        radius: currentLayerSpec.referenceRisk,
+      }).addTo(map);
+
+      const reviewArea = L.circle([lat, lon], {
+        color: "#CC88FF",
+        fillColor: "#CC88FF",
+        fillOpacity: 0.07,
+        weight: 1.4,
+        dashArray: "2, 5",
+        radius: currentLayerSpec.reviewArea,
+      }).addTo(map);
+
+      const coordError = L.circle([lat, lon], {
+        color: "#44AAFF",
+        fillColor: "#44AAFF",
+        fillOpacity: 0.14,
+        weight: 2,
+        radius: currentLayerSpec.coordinateError,
+      }).addTo(map);
+
+      const effectCircles = [];
+      for (let i = 0; i < currentLayerSpec.effectRadii.length; i++) {
+        const effectItem = currentLayerSpec.effectRadii[i];
+        const effectCircle = L.circle([lat, lon], {
+          color: effectItem.color || "#E8FF88",
+          fillColor: effectItem.color || "#E8FF88",
+          fillOpacity: 0.05,
+          weight: 1.2,
+          dashArray: "1, 5",
+          radius: Math.max(0, effectItem.radiusM || 0),
+        }).addTo(map);
+        effectCircles.push(effectCircle);
+      }
+
+      markers[id] = {
+        marker: m,
+        coordError,
+        analysisBoundary,
+        referenceRisk,
+        observationRange,
+        reviewArea,
+        effectCircles,
+        layers: {
+          source: currentLayerSpec.source,
+          coordinateError: currentLayerSpec.coordinateError,
+          analysisBoundary: currentLayerSpec.analysisBoundary,
+          referenceRisk: currentLayerSpec.referenceRisk,
+          observationRange: currentLayerSpec.observationRange,
+          reviewArea: currentLayerSpec.reviewArea,
+          effectSummary: currentLayerSpec.effectSummary,
+          effectRadii: currentLayerSpec.effectRadii,
+          confidence: currentLayerSpec.confidence,
+          timestamp: currentLayerSpec.timestamp,
+        },
+      };
+
+      updateMarkerNumbers();
+      document.title =
+        "LOG|[MAP] แสดงชั้นข้อมูลบนแผนที่ที่ " + lat.toFixed(4) + ", " + lon.toFixed(4);
+    }
+
+    const targetMarkerLayer = L.layerGroup().addTo(map);
+    let linkMode = false;
+    let selectedTargetId = null;
+
+    function setTargetMarkers(items) {
+      targetMarkerLayer.clearLayers();
+      (items || []).forEach((item) => {
+        const selected = item.targetCardId === selectedTargetId;
+        const effectRadii = (item.effectRadii || [])
+          .slice()
+          .sort((a, b) => (b.radiusM || 0) - (a.radiusM || 0));
+        for (let i = 0; i < effectRadii.length; i++) {
+          const effectItem = effectRadii[i];
+          const radiusM = Math.max(0, effectItem.radiusM || 0);
+          if (!radiusM) {
+            continue;
+          }
+          L.circle([item.lat, item.lng], {
+            color: effectItem.color || "#E8FF88",
+            fillColor: effectItem.color || "#E8FF88",
+            fillOpacity: 0.25,
+            weight: selected ? 2 : 1,
+            radius: radiusM,
+          }).addTo(targetMarkerLayer);
+        }
+        const radiusM = Math.max(0, item.radiusM || 0);
+        if (radiusM > 0) {
+          L.circle([item.lat, item.lng], {
+            color: selected ? "#FFD700" : "#44AAFF",
+            fillColor: selected ? "#FFD700" : "#44AAFF",
+            fillOpacity: selected ? 0.2 : 0.14,
+            weight: 2,
+            radius: radiusM,
+          }).addTo(targetMarkerLayer);
+        }
+        const icon = L.divIcon({
+          className: "custom-div-icon",
+          html:
+            "<div class='target-center-dot'></div>" +
+            "<div class='target-marker-label'>" + item.label + "</div>",
+          iconSize: [0, 0],
+          iconAnchor: [0, 0],
+        });
+        const marker = L.marker([item.lat, item.lng], { icon }).addTo(targetMarkerLayer);
+        marker.on("click", (evt) => {
+          L.DomEvent.stopPropagation(evt);
+          highlightTarget(item.targetCardId);
+          document.title = "MAAP_SYNC|select_target|" + item.targetCardId;
+        });
+      });
+    }
+
+    function highlightTarget(targetCardId) {
+      selectedTargetId = targetCardId;
+    }
+
+    function setLinkMode(enabled) {
+      linkMode = !!enabled;
+      document.getElementById("map").style.cursor = linkMode ? "cell" : "crosshair";
+    }
+
+    function fitToTarget(lat, lng) {
+      map.flyTo([lat, lng], 17, { animate: true, duration: 1.0 });
+    }
+
+    map.on("click", (e) => {
+      if (linkMode) {
+        linkMode = false;
+        document.getElementById("map").style.cursor = "crosshair";
+        document.title =
+          "MAAP_SYNC|link_map|" + e.latlng.lat + "|" + e.latlng.lng;
+        return;
+      }
+    });
+
+    function panAndMark(lat, lon) {
+      map.flyTo([lat, lon], 17, { animate: true, duration: 1.5 });
+      setTimeout(() => {
+        createMarkerAt(lat, lon);
+      }, 1500);
+    }
+
+    function panAndMarkReference(
+      lat,
+      lon,
+      source,
+      coordinateError,
+      analysisBoundary,
+      referenceRisk,
+      observationRange,
+      reviewArea,
+      effectSummary,
+      effectRadii,
+      confidence,
+      timestamp,
+    ) {
+      setMapLayerSpec(
+        source,
+        coordinateError,
+        analysisBoundary,
+        referenceRisk,
+        observationRange,
+        reviewArea,
+        effectSummary,
+        effectRadii,
+        confidence,
+        timestamp,
+      );
+      clearAllMarkers();
+      map.flyTo([lat, lon], 17, { animate: true, duration: 1.5 });
+      setTimeout(() => {
+        createMarkerAt(lat, lon);
+      }, 1500);
+    }
+
+    const orgLayer = L.layerGroup().addTo(map);
+    const depotLayer = L.layerGroup().addTo(map);
+    const routeLayer = L.layerGroup().addTo(map);
+    const deploymentLayer = L.layerGroup().addTo(map);
+    const layerVisibility = {
+      organizations: true,
+      depots: true,
+      routes: true,
+      deployments: true,
+      readiness: true,
+    };
+
+    function makeEntityIcon(label, color) {
+      return L.divIcon({
+        className: "custom-div-icon",
+        html:
+          "<div style='width:10px;height:10px;background:" + color +
+          ";border:2px solid #fff;border-radius:50%;box-shadow:0 0 6px " + color + ";'></div>" +
+          "<div class='target-marker-label'>" + label + "</div>",
+        iconSize: [0, 0],
+        iconAnchor: [0, 0],
+      });
+    }
+
+    function setAssetLayers(data) {
+      orgLayer.clearLayers();
+      depotLayer.clearLayers();
+      routeLayer.clearLayers();
+      deploymentLayer.clearLayers();
+      (data.organizations || []).forEach((item) => {
+        const marker = L.marker([item.lat, item.lng], {
+          icon: makeEntityIcon(item.label, "#60a5fa"),
+        }).addTo(orgLayer);
+        marker.on("click", (evt) => {
+          L.DomEvent.stopPropagation(evt);
+          document.title = "MAAP_SYNC|select_entity|organization|" + item.entityId;
+        });
+      });
+      (data.depots || []).forEach((item) => {
+        const marker = L.marker([item.lat, item.lng], {
+          icon: makeEntityIcon(item.label, "#4ade80"),
+        }).addTo(depotLayer);
+        marker.on("click", (evt) => {
+          L.DomEvent.stopPropagation(evt);
+          document.title = "MAAP_SYNC|select_entity|depot|" + item.entityId;
+        });
+      });
+      (data.routes || []).forEach((item) => {
+        const line = L.polyline([item.origin, item.destination], {
+          color: "#d6b35a",
+          weight: 3,
+          opacity: 0.85,
+          dashArray: "8, 6",
+        }).addTo(routeLayer);
+        line.on("click", (evt) => {
+          L.DomEvent.stopPropagation(evt);
+          document.title = "MAAP_SYNC|select_entity|route|" + item.routeId;
+        });
+      });
+      applyLayerVisibility();
+    }
+
+    function setLayerVisibility(layers) {
+      Object.assign(layerVisibility, layers || {});
+      applyLayerVisibility();
+    }
+
+    function applyLayerVisibility() {
+      if (layerVisibility.organizations) {
+        map.addLayer(orgLayer);
+      } else {
+        map.removeLayer(orgLayer);
+      }
+      if (layerVisibility.depots) {
+        map.addLayer(depotLayer);
+      } else {
+        map.removeLayer(depotLayer);
+      }
+      if (layerVisibility.routes) {
+        map.addLayer(routeLayer);
+      } else {
+        map.removeLayer(routeLayer);
+      }
+    }
+
+    function fitToScenario() {
+      map.setView(DEFAULT_CENTER, DEFAULT_ZOOM);
+    }
+
+    window.maapMap = {
+      fitToScenario,
+      panAndMark,
+      panAndMarkReference,
+      clearAllMarkers,
+      setMapLayerSpec,
+      setTargetMarkers,
+      highlightTarget,
+      setLinkMode,
+      fitToTarget,
+      setAssetLayers,
+      setLayerVisibility,
+    };
+  </script>
+</body>
+</html>

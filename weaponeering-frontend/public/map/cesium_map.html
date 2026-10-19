@@ -1,0 +1,4691 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>MAP_INIT</title>
+  <script>
+    // Prefer local Cesium from Vite (/cesium-static) — same app package as frontend.
+    window.CESIUM_BASE_URL = "/cesium-static/";
+  </script>
+  <link rel="stylesheet" href="/cesium-static/Widgets/widgets.css" />
+  <script src="/cesium-static/Cesium.js"></script>
+  <!-- Turf is optional (detection buffers). Load async so a blocked CDN cannot blank the map. -->
+  <script>
+    (function loadTurfAsync() {
+      var s = document.createElement("script");
+      s.src = "https://cdn.jsdelivr.net/npm/@turf/turf@7.2.0/turf.min.js";
+      s.async = true;
+      s.onerror = function () {
+        console.warn("Turf.js failed to load; detection polygon union will be limited");
+      };
+      document.head.appendChild(s);
+    })();
+  </script>
+  <!-- QWebChannel is Qt-only; load only when running inside desktop WebEngine -->
+  <script>
+    if (typeof qt !== "undefined" && qt.webChannelTransport) {
+      var s = document.createElement("script");
+      s.src = "qrc:///qtwebchannel/qwebchannel.js";
+      document.head.appendChild(s);
+    }
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&family=Noto+Sans+Thai:wght@300;400;500;600;700&family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --map-font-sans: 'IBM Plex Sans Thai', 'Inter', 'Noto Sans Thai', 'Sarabun', 'Leelawadee UI', Tahoma, sans-serif;
+    }
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: #020b07;
+      font-family: var(--map-font-sans);
+      letter-spacing: 0.012em;
+    }
+    #cesiumContainer {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: #020b07;
+    }
+    .cesium-viewer .cesium-widget-credits,
+    .cesium-viewer-bottom,
+    .cesium-credit-logoContainer {
+      display: none !important;
+    }
+    body.maap-show-credits .cesium-viewer .cesium-viewer-bottom {
+      display: block !important;
+    }
+    body.maap-show-credits .cesium-viewer .cesium-widget-credits,
+    body.maap-show-credits .cesium-viewer .cesium-credit-logoContainer {
+      display: inline !important;
+    }
+    #measureHud {
+      display: none;
+      position: absolute;
+      top: 54px;
+      left: 12px;
+      z-index: 1000;
+      max-width: 320px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      background: rgba(10, 16, 24, 0.92);
+      border: 1px solid #2a3a4f;
+      color: #e2e8f0;
+      font: 12px/1.55 var(--map-font-sans);
+      letter-spacing: 0.012em;
+      pointer-events: none;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    }
+    #measureHud strong {
+      color: #7dd3fc;
+      font-size: 13px;
+    }
+    #measureHud .hint {
+      margin-top: 6px;
+      color: #94a3b8;
+      font-size: 11px;
+    }
+    #pickCoordHud {
+      display: none;
+      position: absolute;
+      top: 54px;
+      right: 12px;
+      z-index: 1000;
+      max-width: 280px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      background: rgba(10, 16, 24, 0.92);
+      border: 1px solid #2a3a4f;
+      color: #e2e8f0;
+      font: 12px/1.55 var(--map-font-sans);
+      letter-spacing: 0.012em;
+      pointer-events: none;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    }
+    #pickCoordHud strong {
+      color: #6ee7b7;
+      font-size: 13px;
+    }
+    #pickCoordHud .hint {
+      margin-top: 6px;
+      color: #94a3b8;
+      font-size: 11px;
+    }
+    #teamContextMenu {
+      display: none;
+      position: absolute;
+      z-index: 2000;
+      min-width: 220px;
+      padding: 6px;
+      border-radius: 10px;
+      background: rgba(10, 16, 24, 0.96);
+      border: 1px solid #2a3a4f;
+      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+      color: #e2e8f0;
+      font: 12px/1.5 var(--map-font-sans);
+      letter-spacing: 0.012em;
+    }
+    #teamContextMenu .menu-title {
+      padding: 4px 8px 8px;
+      color: #94a3b8;
+      font-size: 11px;
+    }
+    #teamContextMenu .side-tabs {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      padding: 0 4px 8px;
+    }
+    #teamContextMenu .side-tab {
+      margin: 0;
+      padding: 8px 6px;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      background: rgba(15, 23, 42, 0.7);
+      text-align: center;
+      cursor: pointer;
+      font: 11px/1.4 var(--map-font-sans);
+      letter-spacing: 0.012em;
+      transition: background 0.15s ease, border-color 0.15s ease;
+    }
+    #teamContextMenu .side-tab.blue {
+      color: #93c5fd;
+    }
+    #teamContextMenu .side-tab.red {
+      color: #fca5a5;
+    }
+    #teamContextMenu .side-tab.blue.active {
+      background: rgba(59, 130, 246, 0.22);
+      border-color: #3b82f6;
+      color: #dbeafe;
+    }
+    #teamContextMenu .side-tab span {
+      display: block;
+      margin-top: 2px;
+      font-size: 10px;
+      opacity: 0.85;
+    }
+    #teamContextMenu .menu-section {
+      padding: 4px 8px 6px;
+      color: #94a3b8;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      border-top: 1px solid #1e293b;
+    }
+    #teamContextMenu button.unit-option {
+      display: block;
+      width: 100%;
+      margin: 0;
+      padding: 8px 10px;
+      border: 1px solid transparent;
+      border-radius: 8px;
+      background: transparent;
+      color: #e2e8f0;
+      text-align: left;
+      cursor: pointer;
+      font: 12px/1.35 sans-serif;
+    }
+    #teamContextMenu button.unit-option:hover {
+      background: rgba(51, 65, 85, 0.55);
+      border-color: #334155;
+    }
+    #teamContextMenu.side-blue button.unit-option:hover {
+      color: #bfdbfe;
+    }
+    #teamContextMenu.side-red button.unit-option:hover {
+      color: #fecaca;
+    }
+    #teamContextMenu button.target-create-btn {
+      display: block;
+      width: calc(100% - 8px);
+      margin: 0 4px 8px;
+      padding: 9px 10px;
+      border: 1px solid #166534;
+      border-radius: 8px;
+      background: rgba(22, 101, 52, 0.28);
+      color: #bbf7d0;
+      text-align: left;
+      cursor: pointer;
+      font: 12px/1.35 sans-serif;
+    }
+    #teamContextMenu button.target-create-btn:hover {
+      background: rgba(22, 163, 74, 0.35);
+      border-color: #22c55e;
+      color: #ecfdf5;
+    }
+  </style>
+</head>
+<body>
+  <div id="cesiumContainer"></div>
+  <div id="measureHud">
+    <strong id="measureTotal">0 m</strong>
+    <div id="measureSegments"></div>
+    <div class="hint" id="measureHint">คลิกเพิ่มจุด · คลิกขวา/ดับเบิลคลิกจบเส้น · ปุ่ม Clear ล้างทั้งหมด</div>
+  </div>
+  <div id="pickCoordHud">
+    <strong id="pickCoordValue">Lat —, Lng —</strong>
+    <div class="hint" id="pickCoordHint">คลิกบนแผนที่เพื่อรับพิกัด</div>
+  </div>
+  <div id="teamContextMenu" class="side-blue">
+    <div class="menu-title">เมนูแผนที่ (คลิกขวา)</div>
+    <button type="button" class="target-create-btn" id="targetCreateBtn">สร้างเป้าหมายที่นี่</button>
+    <div class="menu-section">เพิ่มหน่วย Blue/Red</div>
+    <div class="side-tabs">
+      <button type="button" class="side-tab blue active" data-side="blue">Blue<br><span>ฝ่ายเรา</span></button>
+      <button type="button" class="side-tab red" data-side="red">Red<br><span>ฝ่ายตรงข้าม</span></button>
+    </div>
+    <div class="menu-section">ประเภทหน่วย</div>
+    <button type="button" class="unit-option" data-unit="generic">ทั่วไป</button>
+    <button type="button" class="unit-option" data-unit="radar">เรดาร์</button>
+    <button type="button" class="unit-option" data-unit="tank">รถถัง</button>
+    <button type="button" class="unit-option" data-unit="small_arms">ปืนเล็ก</button>
+    <button type="button" class="unit-option" data-unit="artillery">ปืนใหญ่</button>
+    <button type="button" class="unit-option" data-unit="anti_air">ปืนต่อสู้อากาศยาน</button>
+  </div>
+  <script>
+    function notifyParent(payload) {
+      try {
+        if (window.parent && window.parent !== window) {
+          window.parent.postMessage(Object.assign({ source: "maap-map" }, payload), "*");
+        }
+      } catch (_err) {
+        /* ignore */
+      }
+    }
+
+    if (typeof Cesium === "undefined") {
+      document.body.innerHTML =
+        '<div style="padding:16px;color:#fecaca;font:14px sans-serif;background:#111827;height:100%">' +
+        "<strong>โหลด Cesium ไม่สำเร็จ</strong><br/>ตรวจ /cesium-static/Cesium.js แล้วรีเฟรชหน้า" +
+        "</div>";
+      notifyParent({ type: "map-error", message: "Cesium failed to load" });
+      throw new Error("Cesium failed to load");
+    }
+
+    const DEFAULT_LAT = 15.0;
+    const DEFAULT_LNG = 101.0;
+    const DEFAULT_HEIGHT = 1200000;
+    const WING_ICON_SIZE = 72;
+    const EFFECT_ZONE_DASH_LENGTH = 12;
+    const EFFECT_ZONE_LINE_WIDTH = 2.5;
+    const EFFECT_ZONE_LINE_WIDTH_SELECTED = 3;
+    let wingIconUrl = "./icons/airport.png";
+    let terrainEnabled = false;
+    let terrainReady = false;
+    let routePickMode = null;
+    let aiRoutePickHandler = null;
+
+    // Esri answers HTTP 200 with a grey "Map data not yet available" tile where it has
+    // no imagery at that zoom; discarding it makes Cesium keep upsampling the parent tile.
+    function createEsriWorldImageryProvider() {
+      const base =
+        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile";
+      return new Cesium.UrlTemplateImageryProvider({
+        url: `${base}/{z}/{y}/{x}`,
+        maximumLevel: 17,
+        tileDiscardPolicy: new Cesium.DiscardMissingTileImagePolicy({
+          missingImageUrl: `${base}/19/0/0`,
+          pixelsToCheck: [
+            new Cesium.Cartesian2(0, 0),
+            new Cesium.Cartesian2(255, 0),
+            new Cesium.Cartesian2(0, 255),
+            new Cesium.Cartesian2(255, 255),
+            new Cesium.Cartesian2(128, 12),
+            new Cesium.Cartesian2(12, 128),
+          ],
+        }),
+      });
+    }
+
+    let viewer;
+    try {
+      // Avoid Ion default imagery (needs token); start with Esri World Imagery.
+      const defaultImagery = createEsriWorldImageryProvider();
+      const viewerOptions = {
+        animation: false,
+        timeline: false,
+        fullscreenButton: false,
+        vrButton: false,
+        geocoder: false,
+        homeButton: false,
+        infoBox: false,
+        selectionIndicator: true,
+        sceneModePicker: false,
+        baseLayerPicker: false,
+        navigationHelpButton: false,
+        terrainProvider: new Cesium.EllipsoidTerrainProvider(),
+        requestRenderMode: false,
+        contextOptions: {
+          webgl: { alpha: false, preserveDrawingBuffer: true },
+        },
+      };
+      // Cesium 1.104+ uses baseLayer; older builds used imageryProvider.
+      if (Cesium.ImageryLayer) {
+        viewerOptions.baseLayer = new Cesium.ImageryLayer(defaultImagery);
+      } else {
+        viewerOptions.imageryProvider = defaultImagery;
+      }
+      viewer = new Cesium.Viewer("cesiumContainer", viewerOptions);
+    } catch (err) {
+      const msg = (err && err.message) || String(err);
+      document.body.innerHTML =
+        '<div style="padding:16px;color:#fecaca;font:14px sans-serif;background:#111827;height:100%">' +
+        "<strong>เปิด Cesium ไม่สำเร็จ</strong><br/>" +
+        msg +
+        "<br/><br/>ตรวจว่าเบราว์เซอร์รองรับ WebGL แล้วรีเฟรชหน้า" +
+        "</div>";
+      notifyParent({ type: "map-error", message: msg });
+      throw err;
+    }
+    window.viewer = viewer;
+    // Hide Ion/credit chrome in web embed
+    try {
+      if (viewer._cesiumWidget && viewer._cesiumWidget._creditContainer) {
+        viewer._cesiumWidget._creditContainer.style.display = "none";
+      }
+      const bottoms = document.querySelectorAll(".cesium-viewer-bottom");
+      bottoms.forEach((el) => {
+        el.style.display = "none";
+      });
+    } catch (_err) {
+      /* ignore */
+    }
+
+    // Center over Thailand so first paint is useful (desktop default is US view).
+    try {
+      viewer.camera.setView({
+        destination: Cesium.Cartesian3.fromDegrees(DEFAULT_LNG, DEFAULT_LAT, DEFAULT_HEIGHT),
+      });
+      viewer.resize();
+    } catch (_err) {
+      /* ignore */
+    }
+
+    // Keep canvas size in sync with iframe/container (avoids pin/click offset).
+    try {
+      const resizeViewer = () => {
+        try {
+          viewer.resize();
+          viewer.scene.requestRender();
+        } catch (_err) {
+          /* ignore */
+        }
+      };
+      window.addEventListener("resize", resizeViewer);
+      if (typeof ResizeObserver !== "undefined") {
+        const ro = new ResizeObserver(() => resizeViewer());
+        ro.observe(document.getElementById("cesiumContainer") || document.body);
+      }
+      setTimeout(resizeViewer, 50);
+      setTimeout(resizeViewer, 300);
+    } catch (_err) {
+      /* ignore */
+    }
+
+    const DEFAULT_BASEMAP_ID = "cesium";
+    let stadiaApiKey = "";
+
+    function isStadiaBasemap(basemapId) {
+      return basemapId === "stadia_satellite" || basemapId === "stadia_smooth_dark";
+    }
+
+    function setStadiaApiKey(key) {
+      stadiaApiKey = String(key || "").trim();
+    }
+
+    let cesiumIonToken = "";
+
+    function setCesiumIonToken(token) {
+      cesiumIonToken = String(token || "").trim();
+      if (cesiumIonToken) {
+        Cesium.Ion.defaultAccessToken = cesiumIonToken;
+      }
+    }
+
+    // Bing / Cesium ion terms require their attribution to stay visible while in use.
+    function setCreditsVisible(visible) {
+      document.body.classList.toggle("maap-show-credits", !!visible);
+    }
+
+    function createStadiaTileProvider(tilePath, ext) {
+      const query = stadiaApiKey
+        ? `?api_key=${encodeURIComponent(stadiaApiKey)}`
+        : "";
+      return new Cesium.UrlTemplateImageryProvider({
+        url: `https://tiles.stadiamaps.com/tiles/${tilePath}/{z}/{x}/{y}.${ext}${query}`,
+        minimumLevel: 0,
+        maximumLevel: 20,
+      });
+    }
+
+    const BASEMAPS = {
+      stadia_satellite: {
+        label: "Stadia Alidade Satellite",
+        create: () => createStadiaTileProvider("alidade_satellite", "jpg"),
+      },
+      stadia_smooth_dark: {
+        label: "Stadia Alidade Smooth Dark",
+        create: () => createStadiaTileProvider("alidade_smooth_dark", "png"),
+      },
+      open_topo_map: {
+        label: "OpenTopoMap",
+        create: () =>
+          new Cesium.UrlTemplateImageryProvider({
+            url: "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
+            subdomains: ["a", "b", "c"],
+            maximumLevel: 17,
+          }),
+      },
+      bing_aerial: {
+        label: "Bing Aerial (Cesium ion)",
+        requiresIonToken: true,
+        showCredits: true,
+        create: () => Cesium.IonImageryProvider.fromAssetId(2),
+      },
+      esri_world_imagery: {
+        label: "Esri World Imagery",
+        create: createEsriWorldImageryProvider,
+      },
+      cesium: {
+        label: "Cesium / ดาวเทียม",
+        create: createEsriWorldImageryProvider,
+      },
+      rtaf_50k: {
+        label: "RTAF 1:50K",
+        url: "https://gisportal.rtaf.mi.th/image/rest/services/Map_1_50K/ImageServer",
+      },
+      rtaf_250k: {
+        label: "RTAF 1:250K",
+        url: "https://gisportal.rtaf.mi.th/image/rest/services/Map_1_250K/ImageServer",
+      },
+      rtaf_500k: {
+        label: "RTAF 1:500K",
+        url: "https://gisportal.rtaf.mi.th/image/rest/services/Map_1_500K_RGB/ImageServer",
+      },
+    };
+
+    let currentBasemapId = DEFAULT_BASEMAP_ID;
+    let basemapSwitchToken = 0;
+
+    async function createRtafImageryProvider(url) {
+      try {
+        return await Cesium.ArcGisMapServerImageryProvider.fromUrl(url, {
+          enablePickFeatures: false,
+        });
+      } catch (primaryError) {
+        console.warn("ArcGIS ImageServer provider failed, using export fallback", url, primaryError);
+        return new Cesium.UrlTemplateImageryProvider({
+          url: `${url}/export?bbox={west},{south},{east},{north}&bboxSR=4326&imageSR=4326&size=256,256&format=png&f=image`,
+          tilingScheme: new Cesium.GeographicTilingScheme(),
+          maximumLevel: 18,
+        });
+      }
+    }
+
+    async function createBasemapProvider(basemapId) {
+      const spec = BASEMAPS[basemapId] || BASEMAPS[DEFAULT_BASEMAP_ID];
+      if (typeof spec.create === "function") {
+        return spec.create();
+      }
+      if (spec.url) {
+        return createRtafImageryProvider(spec.url);
+      }
+      return BASEMAPS[DEFAULT_BASEMAP_ID].create();
+    }
+
+    async function setBasemap(basemapId) {
+      let id = BASEMAPS[basemapId] ? basemapId : DEFAULT_BASEMAP_ID;
+      if (isStadiaBasemap(id) && !stadiaApiKey) {
+        console.warn("Stadia Maps requires an API key. Configure it in Settings > Map.");
+        id = DEFAULT_BASEMAP_ID;
+      }
+      if (BASEMAPS[id].requiresIonToken && !cesiumIonToken) {
+        console.warn("Cesium ion basemap requires an access token.");
+        id = DEFAULT_BASEMAP_ID;
+      }
+      const token = ++basemapSwitchToken;
+      try {
+        const provider = await createBasemapProvider(id);
+        if (token !== basemapSwitchToken) {
+          return currentBasemapId;
+        }
+        viewer.imageryLayers.removeAll();
+        viewer.imageryLayers.addImageryProvider(provider);
+        currentBasemapId = id;
+        setCreditsVisible(!!BASEMAPS[id].showCredits);
+      } catch (error) {
+        console.warn("Basemap switch failed:", id, error);
+        if (id !== DEFAULT_BASEMAP_ID) {
+          return setBasemap(DEFAULT_BASEMAP_ID);
+        }
+      }
+      return currentBasemapId;
+    }
+
+    // Imagery already set via Viewer baseLayer / imageryProvider above.
+
+    viewer.scene.globe.depthTestAgainstTerrain = false;
+    viewer.scene.screenSpaceCameraController.enableRotate = true;
+    viewer.scene.screenSpaceCameraController.enableTilt = true;
+
+    const borderSource = new Cesium.CustomDataSource("borders");
+    const targetSource = new Cesium.CustomDataSource("targets");
+    const effectDomePrimitives = viewer.scene.primitives.add(
+      new Cesium.PrimitiveCollection()
+    );
+    const effectTerrainCache = new Map();
+    let effectTerrainGeneration = 0;
+    let effectDomeEntries = [];
+    const orgSource = new Cesium.CustomDataSource("organizations");
+    const depotSource = new Cesium.CustomDataSource("depots");
+    const routeSource = new Cesium.CustomDataSource("routes");
+    const deploymentSource = new Cesium.CustomDataSource("deployments");
+    const detectionSource = new Cesium.CustomDataSource("detections");
+    const referenceSource = new Cesium.CustomDataSource("reference");
+    const measureSource = new Cesium.CustomDataSource("measure");
+    const riskDirectionSource = new Cesium.CustomDataSource("risk_direction");
+    const corridorFlightSource = new Cesium.CustomDataSource("corridor_flight");
+    const pickCoordSource = new Cesium.CustomDataSource("pick_coord");
+    const teamSource = new Cesium.CustomDataSource("team_markers");
+    const groundTransportSource = new Cesium.CustomDataSource("ground_transport");
+    const aiRouteSource = new Cesium.CustomDataSource("ai_route");
+    viewer.dataSources.add(borderSource);
+    viewer.dataSources.add(targetSource);
+    viewer.dataSources.add(orgSource);
+    viewer.dataSources.add(depotSource);
+    viewer.dataSources.add(routeSource);
+    viewer.dataSources.add(deploymentSource);
+    viewer.dataSources.add(detectionSource);
+    viewer.dataSources.add(referenceSource);
+    viewer.dataSources.add(measureSource);
+    viewer.dataSources.add(riskDirectionSource);
+    viewer.dataSources.add(corridorFlightSource);
+    viewer.dataSources.add(pickCoordSource);
+    viewer.dataSources.add(teamSource);
+    viewer.dataSources.add(groundTransportSource);
+    viewer.dataSources.add(aiRouteSource);
+
+    async function initTerrainProvider() {
+      try {
+        const provider =
+          await Cesium.ArcGISTiledElevationTerrainProvider.fromUrl(
+            "https://elevation3d.arcgis.com/arcgis/rest/services/WorldElevation3D/Terrain3D/ImageServer"
+          );
+        viewer.terrainProvider = provider;
+        terrainReady = true;
+        if (terrainEnabled) {
+          viewer.scene.globe.depthTestAgainstTerrain = true;
+        }
+        refineEffectTerrain(effectTerrainGeneration);
+      } catch (error) {
+        console.warn("Terrain provider failed to load", error);
+        terrainReady = false;
+      }
+    }
+    initTerrainProvider();
+
+    function setTerrainEnabled(enabled) {
+      terrainEnabled = !!enabled;
+      if (terrainEnabled && terrainReady) {
+        viewer.scene.globe.depthTestAgainstTerrain = true;
+      } else {
+        viewer.scene.globe.depthTestAgainstTerrain = false;
+      }
+    }
+
+    const FT_TO_M = 0.3048;
+
+    function sampleTerrainHeightM(lng, lat) {
+      if (!terrainReady || !terrainEnabled) {
+        return 0;
+      }
+      try {
+        const carto = Cesium.Cartographic.fromDegrees(lng, lat);
+        const h = viewer.scene.globe.getHeight(carto);
+        return Number.isFinite(h) ? h : 0;
+      } catch (_error) {
+        return 0;
+      }
+    }
+
+    function applyTerrainAglToPath3d(path3d, prefAglM, minAglM, maxAglM) {
+      if (!path3d || path3d.length < 2) {
+        return path3d || [];
+      }
+      const minAgl = Number(minAglM) || 80;
+      const prefAgl = Number(prefAglM) || 105;
+      const maxAgl = Number(maxAglM) || 150;
+      return path3d.map((point) => {
+        const lat = Number(point[0]);
+        const lng = Number(point[1]);
+        const terrainM = sampleTerrainHeightM(lng, lat);
+        const aglM = Math.min(Math.max(prefAgl, minAgl), maxAgl);
+        return [lat, lng, terrainM + aglM];
+      });
+    }
+
+    function setRoutePickMode(mode) {
+      routePickMode = mode || null;
+      updateMapCursor();
+    }
+
+    function clearAiFlightRoute() {
+      aiRouteSource.entities.removeAll();
+    }
+
+    function addAiRouteEndpoint(lat, lng, label, color) {
+      aiRouteSource.entities.add({
+        position: Cesium.Cartesian3.fromDegrees(lng, lat, 180),
+        point: {
+          pixelSize: 12,
+          color: Cesium.Color.fromCssColorString(color),
+          outlineColor: Cesium.Color.fromCssColorString("#0f172a"),
+          outlineWidth: 2,
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
+        label: {
+          text: label,
+          font: "bold 12px sans-serif",
+          fillColor: Cesium.Color.fromCssColorString(color),
+          outlineColor: Cesium.Color.fromCssColorString("#0f172a"),
+          outlineWidth: 2,
+          style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+          verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+          pixelOffset: new Cesium.Cartesian2(0, -12),
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
+      });
+    }
+
+    function addAiRoutePolyline(path3d, color, width, dashed) {
+      const positions = buildPath3dPositions(path3d);
+      if (positions.length < 2) {
+        return;
+      }
+      aiRouteSource.entities.add({
+        polyline: {
+          positions,
+          width: width || 7,
+          clampToGround: false,
+          material: dashed
+            ? new Cesium.PolylineDashMaterialProperty({
+                color: Cesium.Color.fromCssColorString(color).withAlpha(0.92),
+                dashLength: 16,
+              })
+            : new Cesium.PolylineArrowMaterialProperty({
+                color: Cesium.Color.fromCssColorString(color).withAlpha(0.95),
+              }),
+        },
+      });
+    }
+
+    function setAiFlightRoute(item) {
+      clearAiFlightRoute();
+      if (!item) {
+        return;
+      }
+      const normalized = Object.assign({}, item, {
+        routeColor: item.routeColor || "#38bdf8",
+        routeEditEnabled: true,
+        showReturnRoute:
+          item.showReturnRoute !== false &&
+          (item.returnPath3d || item.returnRoute || []).length >= 2,
+      });
+      if (normalized.targetCardId) {
+        ingressCorridorFocus = {
+          targetCardId: normalized.targetCardId,
+          coordinateId: normalized.coordinateId || null,
+          rank: Number(normalized.rank) || 1,
+        };
+      }
+      addCorridorFlightRoute(normalized);
+      if (normalized.fitToRoute !== false) {
+        fitToCorridorFlightRoute(normalized);
+      }
+    }
+
+    let linkMode = false;
+    let measureMode = false;
+    let pickCoordMode = false;
+    let routeAddMode = false;
+    let flightRouteEditActive = false;
+    let detectionEditActive = false;
+    let detectionAddMode = false;
+    let selectedDetectionId = null;
+    const detectionEntities = {};
+    let routeDragState = null;
+    let measureToolType = "distance";
+    const measureState = {
+      activePoints: [],
+      completedLines: [],
+      activeRadius: null,
+      completedCircles: [],
+    };
+    const measureHud = document.getElementById("measureHud");
+    const measureTotalEl = document.getElementById("measureTotal");
+    const measureSegmentsEl = document.getElementById("measureSegments");
+    const measureHintEl = document.getElementById("measureHint");
+    const pickCoordHud = document.getElementById("pickCoordHud");
+    const pickCoordValueEl = document.getElementById("pickCoordValue");
+    const pickCoordHintEl = document.getElementById("pickCoordHint");
+    let detectionCaptureMode = false;
+    let selectedTargetId = null;
+    let ingressCorridorFocus = null;
+    let markerIdCounter = 0;
+    const referenceMarkers = {};
+
+    const layerVisibility = {
+      organizations: true,
+      depots: true,
+      routes: true,
+      ground_transport: true,
+      deployments: true,
+      detections: true,
+      borders: true,
+      teams: true,
+      readiness: true,
+      effect_domes: true,
+    };
+
+    const BORDER_GEOJSON_URL = "./borders/thailand_adm0_simplified.geojson";
+    let bordersLoaded = false;
+
+    let currentLayerSpec = {
+      source: "กรอกเอง / แผนที่",
+      coordinateError: 25,
+      analysisBoundary: 250,
+      referenceRisk: 150,
+      observationRange: 500,
+      reviewArea: 120,
+      effectSummary: "ไม่มีรายละเอียดผลกระทบอ้างอิง",
+      effectRadii: [],
+      confidence: 0.75,
+      timestamp: "ไม่ระบุ",
+    };
+
+    function addBorderPolyline(coordinates, color) {
+      if (!coordinates || coordinates.length < 2) {
+        return;
+      }
+      const positions = [];
+      for (let i = 0; i < coordinates.length; i += 1) {
+        const lng = Number(coordinates[i][0]);
+        const lat = Number(coordinates[i][1]);
+        if (!Number.isFinite(lng) || !Number.isFinite(lat)) {
+          continue;
+        }
+        positions.push(Cesium.Cartesian3.fromDegrees(lng, lat, 0));
+      }
+      if (positions.length < 2) {
+        return;
+      }
+      const entity = borderSource.entities.add({
+        polyline: {
+          positions: positions,
+          width: 2,
+          clampToGround: true,
+          material: color,
+        },
+      });
+      entity.disableDepthTestDistance = Number.POSITIVE_INFINITY;
+    }
+
+    function addBorderFeatures(geojson) {
+      const borderColor = Cesium.Color.fromCssColorString("#f8fafc").withAlpha(0.9);
+      const features = (geojson && geojson.features) || [];
+      for (let i = 0; i < features.length; i += 1) {
+        const geometry = features[i].geometry;
+        if (!geometry) {
+          continue;
+        }
+        if (geometry.type === "LineString") {
+          addBorderPolyline(geometry.coordinates, borderColor);
+        } else if (geometry.type === "MultiLineString") {
+          const lines = geometry.coordinates || [];
+          for (let j = 0; j < lines.length; j += 1) {
+            addBorderPolyline(lines[j], borderColor);
+          }
+        } else if (geometry.type === "Polygon") {
+          const rings = geometry.coordinates || [];
+          if (rings.length > 0) {
+            addBorderPolyline(rings[0], borderColor);
+          }
+        } else if (geometry.type === "MultiPolygon") {
+          const polygons = geometry.coordinates || [];
+          for (let j = 0; j < polygons.length; j += 1) {
+            const rings = polygons[j] || [];
+            if (rings.length > 0) {
+              addBorderPolyline(rings[0], borderColor);
+            }
+          }
+        }
+      }
+    }
+
+    function loadCountryBorders() {
+      if (bordersLoaded) {
+        return;
+      }
+      fetch(BORDER_GEOJSON_URL)
+        .then((response) => {
+          if (!response.ok) {
+            throw new Error("HTTP " + response.status);
+          }
+          return response.json();
+        })
+        .then((geojson) => {
+          addBorderFeatures(geojson);
+          bordersLoaded = true;
+          applyLayerVisibility();
+        })
+        .catch((error) => {
+          console.warn("Failed to load country borders:", error);
+        });
+    }
+
+    function flyToDegrees(lng, lat, height, duration) {
+      viewer.camera.flyTo({
+        destination: Cesium.Cartesian3.fromDegrees(lng, lat, height || 3500),
+        duration: duration == null ? 1.2 : duration,
+      });
+    }
+
+    function labelStyle(text, fillColor, outlineColor) {
+      return {
+        text,
+        font: "12px sans-serif",
+        fillColor: Cesium.Color.fromCssColorString(fillColor || "#00FF66"),
+        outlineColor: Cesium.Color.fromCssColorString(outlineColor || "#003322"),
+        outlineWidth: 2,
+        style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+        verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+        pixelOffset: new Cesium.Cartesian2(0, -14),
+        heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+      };
+    }
+
+    function pointStyle(color, size) {
+      return {
+        pixelSize: size || 10,
+        color: Cesium.Color.fromCssColorString(color),
+        outlineColor: Cesium.Color.WHITE,
+        outlineWidth: 2,
+        heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+      };
+    }
+
+    function destinationFromBearing(lat, lng, bearingDeg, distanceM) {
+      const centerCartesian = Cesium.Cartesian3.fromDegrees(lng, lat);
+      const transform = Cesium.Transforms.eastNorthUpToFixedFrame(centerCartesian);
+      const azimuth = Cesium.Math.toRadians(bearingDeg);
+      const east = distanceM * Math.sin(azimuth);
+      const north = distanceM * Math.cos(azimuth);
+      const offset = new Cesium.Cartesian3(east, north, 0);
+      const world = Cesium.Matrix4.multiplyByPoint(
+        transform,
+        offset,
+        new Cesium.Cartesian3()
+      );
+      const carto = Cesium.Cartographic.fromCartesian(world);
+      return {
+        lat: Cesium.Math.toDegrees(carto.latitude),
+        lng: Cesium.Math.toDegrees(carto.longitude),
+      };
+    }
+
+    function clearRiskDirectionArrows() {
+      riskDirectionSource.entities.removeAll();
+    }
+
+    function addCorridorPolyline(positions, color, width) {
+      if (!positions || positions.length < 2) {
+        return;
+      }
+      riskDirectionSource.entities.add({
+        polyline: {
+          positions: positions,
+          width: width || 3,
+          clampToGround: true,
+          material: new Cesium.PolylineDashMaterialProperty({
+            color: Cesium.Color.fromCssColorString(color).withAlpha(0.9),
+            dashLength: 14.0,
+          }),
+        },
+      });
+    }
+
+    function addCorridorMarker(lat, lng, label, color) {
+      riskDirectionSource.entities.add({
+        position: Cesium.Cartesian3.fromDegrees(lng, lat, 0),
+        point: {
+          pixelSize: 8,
+          color: Cesium.Color.fromCssColorString(color).withAlpha(0.95),
+          outlineColor: Cesium.Color.fromCssColorString("#0f172a"),
+          outlineWidth: 2,
+          heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
+        label: {
+          text: label,
+          font: "bold 11px sans-serif",
+          fillColor: Cesium.Color.fromCssColorString(color),
+          outlineColor: Cesium.Color.fromCssColorString("#0f172a"),
+          outlineWidth: 2,
+          style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+          verticalOrigin: Cesium.VerticalOrigin.TOP,
+          pixelOffset: new Cesium.Cartesian2(0, 8),
+          heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
+      });
+    }
+
+    function ingressFocusAppliesToMarker(item) {
+      if (!ingressCorridorFocus) {
+        return false;
+      }
+      if (ingressCorridorFocus.targetCardId !== item.targetCardId) {
+        return false;
+      }
+      if (ingressCorridorFocus.coordinateId) {
+        return (item.coordinateId || null) === ingressCorridorFocus.coordinateId;
+      }
+      return true;
+    }
+
+    function shouldDrawBorderCorridor(item, rank) {
+      if (!ingressCorridorFocus || !ingressFocusAppliesToMarker(item)) {
+        return false;
+      }
+      return ingressCorridorFocus.rank === rank;
+    }
+
+    function drawBorderCorridors(item) {
+      if (!item || !item.lowestRiskDirection || !item.lowestRiskDirection.available) {
+        return;
+      }
+      if (!ingressCorridorFocus) {
+        return;
+      }
+      const options = (item.lowestRiskDirection.recommendedOptions || []).slice(0, 3);
+      const corridorStyles = [
+        { color: "#34d399", width: 4, entryLabel: "ออก #1", exitLabel: "เข้า #1" },
+        { color: "#6ee7b7", width: 3, entryLabel: "ออก #2", exitLabel: "เข้า #2" },
+        { color: "#a7f3d0", width: 2, entryLabel: "ออก #3", exitLabel: "เข้า #3" },
+      ];
+      for (let i = 0; i < options.length; i += 1) {
+        const option = options[i];
+        const optionRank = Number(option.rank || i + 1);
+        if (!shouldDrawBorderCorridor(item, optionRank)) {
+          continue;
+        }
+        const route = option.borderRoute;
+        if (!route || !route.available) {
+          continue;
+        }
+        const style = corridorStyles[i] || corridorStyles[corridorStyles.length - 1];
+        const targetLat = Number(item.lat);
+        const targetLng = Number(item.lng);
+        const approachDeg = Number(
+          route.approachBearingDeg != null ? route.approachBearingDeg : option.bearingDeg
+        );
+        const ingressDeg = (approachDeg + 180) % 360;
+        if (route.entry) {
+          const entryDistanceM = Number(route.entry.distanceM || 0);
+          const entryPoint =
+            entryDistanceM > 0
+              ? destinationFromBearing(targetLat, targetLng, ingressDeg, entryDistanceM)
+              : {
+                  lat: Number(route.entry.lat),
+                  lng: Number(route.entry.lng),
+                };
+          addCorridorPolyline(
+            buildGeodesicPolylinePositions([
+              [entryPoint.lat, entryPoint.lng],
+              [targetLat, targetLng],
+            ]),
+            style.color,
+            style.width
+          );
+          addCorridorMarker(
+            entryPoint.lat,
+            entryPoint.lng,
+            style.entryLabel + " " + ingressDeg.toFixed(0) + "°",
+            style.color
+          );
+        }
+        if (route.exit) {
+          const exitDistanceM = Number(route.exit.distanceM || 0);
+          const exitPoint =
+            exitDistanceM > 0
+              ? destinationFromBearing(targetLat, targetLng, approachDeg, exitDistanceM)
+              : {
+                  lat: Number(route.exit.lat),
+                  lng: Number(route.exit.lng),
+                };
+          addCorridorPolyline(
+            buildGeodesicPolylinePositions([
+              [targetLat, targetLng],
+              [exitPoint.lat, exitPoint.lng],
+            ]),
+            style.color,
+            style.width
+          );
+          addCorridorMarker(
+            exitPoint.lat,
+            exitPoint.lng,
+            style.exitLabel + " " + approachDeg.toFixed(0) + "°",
+            style.color
+          );
+        }
+      }
+    }
+
+    function drawRiskDirectionForMarker(item, styleOffset) {
+      if (!item || !item.lowestRiskDirection || !item.lowestRiskDirection.available) {
+        return;
+      }
+      const direction = item.lowestRiskDirection;
+      const baseLengthM = Math.max(Number(direction.arrowLengthM || 0), 40);
+      const optionStyles = [
+        { color: "#22d3ee", alpha: 0.95, width: 6, scale: 1.0, labelColor: "#67e8f9" },
+        { color: "#38bdf8", alpha: 0.78, width: 4, scale: 0.88, labelColor: "#7dd3fc" },
+        { color: "#60a5fa", alpha: 0.62, width: 3, scale: 0.76, labelColor: "#93c5fd" },
+      ];
+      const options =
+        (direction.recommendedOptions && direction.recommendedOptions.length
+          ? direction.recommendedOptions
+          : [
+              {
+                rank: 1,
+                bearingDeg: direction.bearingDeg,
+                compassLabel: direction.compassLabel,
+                riskScore: direction.riskScore,
+              },
+            ]).slice(0, 3);
+      const pointPrefix =
+        item.pointCount > 1
+          ? (item.label || "P" + ((item.pointIndex || 0) + 1)) + " · "
+          : "";
+
+      for (let i = 0; i < options.length; i += 1) {
+        const option = options[i];
+        const style = optionStyles[i] || optionStyles[optionStyles.length - 1];
+        const bearingDeg = Number(option.bearingDeg || 0);
+        const arrowLengthM = baseLengthM * style.scale;
+        const tip = destinationFromBearing(item.lat, item.lng, bearingDeg, arrowLengthM);
+        const linePositions = buildGeodesicPolylinePositions([
+          [item.lat, item.lng],
+          [tip.lat, tip.lng],
+        ]);
+        if (linePositions.length < 2) {
+          continue;
+        }
+        const arrowColor = Cesium.Color.fromCssColorString(style.color).withAlpha(
+          Math.max(style.alpha - (styleOffset || 0) * 0.08, 0.35)
+        );
+        riskDirectionSource.entities.add({
+          polyline: {
+            positions: linePositions,
+            width: Math.max(style.width - (styleOffset || 0), 2),
+            clampToGround: true,
+            material: new Cesium.PolylineArrowMaterialProperty(arrowColor),
+          },
+        });
+        const labelText =
+          pointPrefix +
+          "#" +
+          (option.rank || i + 1) +
+          " " +
+          (option.bearingDeg != null ? option.bearingDeg.toFixed(0) + "° " : "") +
+          (option.compassLabel || "ทิศทางแนะนำ") +
+          (option.ingressBearingDeg != null
+            ? " → ออก " + Number(option.ingressBearingDeg).toFixed(0) + "°"
+            : "") +
+          (option.riskScore != null ? " · " + Number(option.riskScore).toFixed(2) : "");
+        const mid = midpointLatLng(item.lat, item.lng, tip.lat, tip.lng);
+        riskDirectionSource.entities.add({
+          position: Cesium.Cartesian3.fromDegrees(mid[1], mid[0], 0),
+          label: {
+            text: labelText,
+            font: i === 0 ? "bold 12px sans-serif" : "11px sans-serif",
+            fillColor: Cesium.Color.fromCssColorString(style.labelColor),
+            outlineColor: Cesium.Color.fromCssColorString("#0f172a"),
+            outlineWidth: 3,
+            style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+            verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+            pixelOffset: new Cesium.Cartesian2(0, -8 - i * 12 - (styleOffset || 0) * 18),
+            heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          },
+        });
+      }
+      drawBorderCorridors(item);
+    }
+
+    function drawRiskDirectionForTarget(targetCardId) {
+      clearRiskDirectionArrows();
+      if (!targetCardId) {
+        return;
+      }
+      const markers = targetMarkersForCard(targetCardId);
+      markers.forEach((item, index) => {
+        drawRiskDirectionForMarker(item, index);
+      });
+    }
+
+    function drawRiskDirectionArrow(item) {
+      drawRiskDirectionForTarget(item ? item.targetCardId : selectedTargetId);
+    }
+
+    function addCircleEntity(source, lng, lat, radiusM, color, alpha, dash, outlineWidth) {
+      if (!radiusM || radiusM <= 0) {
+        return null;
+      }
+      const entity = source.entities.add({
+        position: Cesium.Cartesian3.fromDegrees(lng, lat),
+        ellipse: {
+          semiMajorAxis: radiusM,
+          semiMinorAxis: radiusM,
+          material: Cesium.Color.fromCssColorString(color).withAlpha(alpha || 0.12),
+          outline: true,
+          outlineColor: Cesium.Color.fromCssColorString(color).withAlpha(0.95),
+          outlineWidth: outlineWidth || (dash ? 1 : 2),
+          height: 0,
+          heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+          classificationType: Cesium.ClassificationType.BOTH,
+        },
+      });
+      entity.disableDepthTestDistance = Number.POSITIVE_INFINITY;
+      return entity;
+    }
+
+    function buildCirclePolylinePositions(lng, lat, radiusM, segments) {
+      const count = segments || 72;
+      const positions = [];
+      const centerCartesian = Cesium.Cartesian3.fromDegrees(lng, lat);
+      const transform = Cesium.Transforms.eastNorthUpToFixedFrame(centerCartesian);
+      for (let i = 0; i <= count; i++) {
+        const azimuth = (i / count) * Cesium.Math.TWO_PI;
+        const east = radiusM * Math.sin(azimuth);
+        const north = radiusM * Math.cos(azimuth);
+        const offset = new Cesium.Cartesian3(east, north, 0);
+        const world = Cesium.Matrix4.multiplyByPoint(
+          transform,
+          offset,
+          new Cesium.Cartesian3()
+        );
+        positions.push(world);
+      }
+      return positions;
+    }
+
+    function addDashedOutlineCircle(source, lng, lat, radiusM, color, outlineWidth) {
+      if (!radiusM || radiusM <= 0) {
+        return null;
+      }
+      const width = outlineWidth || EFFECT_ZONE_LINE_WIDTH;
+      const entity = source.entities.add({
+        polyline: {
+          positions: buildCirclePolylinePositions(lng, lat, radiusM),
+          width: width,
+          clampToGround: true,
+          material: new Cesium.PolylineDashMaterialProperty({
+            color: Cesium.Color.fromCssColorString(color).withAlpha(0.95),
+            dashLength: EFFECT_ZONE_DASH_LENGTH,
+          }),
+        },
+      });
+      entity.disableDepthTestDistance = Number.POSITIVE_INFINITY;
+      return entity;
+    }
+
+    function effectCirclesOverlap(points, radiusM) {
+      if (!points || points.length < 2 || !radiusM) {
+        return false;
+      }
+      for (let i = 0; i < points.length; i++) {
+        for (let j = i + 1; j < points.length; j++) {
+          const distanceM = geodesicDistanceM(
+            points[i].lat,
+            points[i].lng,
+            points[j].lat,
+            points[j].lng
+          );
+          if (distanceM <= radiusM * 2) {
+            return true;
+          }
+        }
+      }
+      return false;
+    }
+
+    function geometryToPolygonRings(geometry) {
+      if (!geometry) {
+        return [];
+      }
+      if (geometry.type === "Polygon") {
+        return geometry.coordinates.length ? [geometry.coordinates[0]] : [];
+      }
+      if (geometry.type === "MultiPolygon") {
+        return geometry.coordinates
+          .map((polygon) => (polygon.length ? polygon[0] : null))
+          .filter(Boolean);
+      }
+      return [];
+    }
+
+    function mergeRingUnionFeature(rings) {
+      if (!rings || !rings.length || typeof turf === "undefined") {
+        return null;
+      }
+      let merged = null;
+      for (let i = 0; i < rings.length; i++) {
+        const ring = rings[i];
+        if (!ring || ring.length < 3) {
+          continue;
+        }
+        const polygon = turf.polygon([ring.concat([ring[0]])]);
+        if (!merged) {
+          merged = polygon;
+          continue;
+        }
+        const unioned = turf.union(turf.featureCollection([merged, polygon]));
+        if (unioned) {
+          merged = unioned;
+        }
+      }
+      return merged;
+    }
+
+    function addDashedPolygonOutline(source, ring, color, outlineWidth, meta) {
+      if (!ring || ring.length < 3) {
+        return null;
+      }
+      const positions = ring.map((coord) =>
+        Cesium.Cartesian3.fromDegrees(Number(coord[0]), Number(coord[1]), 0)
+      );
+      if (positions.length < 3) {
+        return null;
+      }
+      const closed = positions.slice();
+      closed.push(positions[0]);
+      const width = outlineWidth || EFFECT_ZONE_LINE_WIDTH;
+      const entity = source.entities.add({
+        polyline: {
+          positions: closed,
+          width: width,
+          clampToGround: true,
+          material: new Cesium.PolylineDashMaterialProperty({
+            color: Cesium.Color.fromCssColorString(color).withAlpha(0.95),
+            dashLength: EFFECT_ZONE_DASH_LENGTH,
+          }),
+        },
+      });
+      entity.disableDepthTestDistance = Number.POSITIVE_INFINITY;
+      if (meta) {
+        entity.maapMeta = meta;
+      }
+      return entity;
+    }
+
+    const EFFECT_TERRAIN_AZIMUTHS = 64;
+    const EFFECT_DOME_ROWS = 14;
+
+    function effectGroupMaxRadiusM(groupItems) {
+      let maxR = 0;
+      groupItems.forEach((item) => {
+        (item.effectRadii || []).forEach((zone) => {
+          maxR = Math.max(maxR, Number(zone.radiusM) || 0);
+        });
+      });
+      return maxR;
+    }
+
+    function effectRadialSteps(maxR) {
+      return Math.min(40, Math.max(12, Math.ceil(maxR / 15)));
+    }
+
+    function effectTerrainKey(item, maxR) {
+      return `${Number(item.lat).toFixed(6)},${Number(item.lng).toFixed(6)},${Math.round(maxR)}`;
+    }
+
+    function effectAimPointEnu(item) {
+      return Cesium.Transforms.eastNorthUpToFixedFrame(
+        Cesium.Cartesian3.fromDegrees(item.lng, item.lat)
+      );
+    }
+
+    function effectEnuOffsetCarto(enu, eastM, northM) {
+      const world = Cesium.Matrix4.multiplyByPoint(
+        enu,
+        new Cesium.Cartesian3(eastM, northM, 0),
+        new Cesium.Cartesian3()
+      );
+      return Cesium.Cartographic.fromCartesian(world);
+    }
+
+    // Polar grid: index 0 is the aim point, then `steps` radial samples per azimuth.
+    function effectTerrainSampleCartos(item, maxR) {
+      const steps = effectRadialSteps(maxR);
+      const enu = effectAimPointEnu(item);
+      const cartos = [Cesium.Cartographic.fromDegrees(item.lng, item.lat)];
+      for (let a = 0; a < EFFECT_TERRAIN_AZIMUTHS; a++) {
+        const az = (a / EFFECT_TERRAIN_AZIMUTHS) * Cesium.Math.TWO_PI;
+        for (let k = 1; k <= steps; k++) {
+          const d = (maxR * k) / steps;
+          const carto = effectEnuOffsetCarto(enu, d * Math.sin(az), d * Math.cos(az));
+          carto.height = 0;
+          cartos.push(carto);
+        }
+      }
+      return cartos;
+    }
+
+    function effectTerrainProfile(item, maxR) {
+      const cached = effectTerrainCache.get(effectTerrainKey(item, maxR));
+      if (cached) {
+        return cached;
+      }
+      const h0 = viewer.scene.globe.getHeight(
+        Cesium.Cartographic.fromDegrees(item.lng, item.lat)
+      );
+      return { maxR: maxR, steps: 0, h0: Number.isFinite(h0) ? h0 : 0, heights: null };
+    }
+
+    // Where the effect sphere (slant range from the aim point) meets the terrain,
+    // so rising or falling ground pulls the zone edge inward.
+    function effectZoneRim(item, profile, radiusM) {
+      const enu = effectAimPointEnu(item);
+      const rim = [];
+      for (let a = 0; a < EFFECT_TERRAIN_AZIMUTHS; a++) {
+        const az = (a / EFFECT_TERRAIN_AZIMUTHS) * Cesium.Math.TWO_PI;
+        let d = radiusM;
+        let h = profile.h0;
+        if (profile.heights) {
+          let prevD = 0;
+          let prevH = profile.h0;
+          let prevS = 0;
+          for (let k = 1; k <= profile.steps; k++) {
+            const dk = (profile.maxR * k) / profile.steps;
+            const hk = profile.heights[1 + a * profile.steps + (k - 1)];
+            const sk = Math.hypot(dk, hk - profile.h0);
+            if (sk >= radiusM) {
+              const t = sk > prevS ? (radiusM - prevS) / (sk - prevS) : 0;
+              d = prevD + t * (dk - prevD);
+              h = prevH + t * (hk - prevH);
+              break;
+            }
+            prevD = dk;
+            prevH = hk;
+            prevS = sk;
+          }
+        }
+        const carto = effectEnuOffsetCarto(enu, d * Math.sin(az), d * Math.cos(az));
+        rim.push({
+          az: az,
+          d: d,
+          dh: h - profile.h0,
+          lat: Cesium.Math.toDegrees(carto.latitude),
+          lng: Cesium.Math.toDegrees(carto.longitude),
+        });
+      }
+      return rim;
+    }
+
+    function addTargetEffectZoneForPoints(groupItems, effectItem, selected) {
+      const radiusM = Math.max(0, effectItem.radiusM || 0);
+      if (!radiusM) {
+        return;
+      }
+      const color = effectItem.color || "#E8FF88";
+      const outlineWidth = selected
+        ? EFFECT_ZONE_LINE_WIDTH_SELECTED
+        : EFFECT_ZONE_LINE_WIDTH;
+      const points = groupItems.map((item) => ({
+        lat: item.lat,
+        lng: item.lng,
+        radiusM: radiusM,
+      }));
+      const maxR = Math.max(radiusM, effectGroupMaxRadiusM(groupItems));
+      const rims = groupItems.map((item) =>
+        effectZoneRim(item, effectTerrainProfile(item, maxR), radiusM).map((p) => [
+          p.lng,
+          p.lat,
+        ])
+      );
+      const metaBase = {
+        type: "target",
+        id: groupItems[0].targetCardId,
+        part: "effect",
+        zone: effectItem.zone || "",
+        color: color,
+        merged: false,
+      };
+
+      if (
+        groupItems.length > 1 &&
+        effectCirclesOverlap(points, radiusM) &&
+        typeof turf !== "undefined"
+      ) {
+        const merged = mergeRingUnionFeature(rims);
+        const rings = geometryToPolygonRings(merged && merged.geometry);
+        if (rings.length) {
+          rings.forEach((ring) => {
+            addDashedPolygonOutline(
+              targetSource,
+              ring,
+              color,
+              outlineWidth,
+              Object.assign({}, metaBase, { merged: true })
+            );
+          });
+          return;
+        }
+      }
+
+      rims.forEach((ring) => {
+        addDashedPolygonOutline(
+          targetSource,
+          ring,
+          color,
+          outlineWidth,
+          Object.assign({}, metaBase, { merged: false })
+        );
+      });
+    }
+
+    function addTargetEffectRadiiForGroup(groupItems, selected) {
+      const template = (groupItems[0] && groupItems[0].effectRadii) || [];
+      const radii = template
+        .slice()
+        .sort((a, b) => (b.radiusM || 0) - (a.radiusM || 0));
+      for (let i = 0; i < radii.length; i++) {
+        addTargetEffectZoneForPoints(groupItems, radii[i], selected);
+      }
+    }
+
+    function effectDomeAlpha(selected) {
+      return selected ? 0.16 : 0.09;
+    }
+
+    function addTargetEffectDomes(groupItems) {
+      const maxR = effectGroupMaxRadiusM(groupItems);
+      groupItems.forEach((item) => {
+        const profile = effectTerrainProfile(item, maxR);
+        const zones = (item.effectRadii || [])
+          .filter((zone) => (zone.radiusM || 0) > 0)
+          .sort((a, b) => (b.radiusM || 0) - (a.radiusM || 0))
+          .map((zone) => ({
+            radiusM: zone.radiusM,
+            color: zone.color || "#E8FF88",
+            rim: effectZoneRim(item, profile, zone.radiusM),
+          }));
+        if (zones.length) {
+          effectDomeEntries.push({ item: item, h0: profile.h0, zones: zones });
+        }
+      });
+    }
+
+    function buildEffectDomeGeometry(item, h0, zone) {
+      const radiusM = zone.radiusM;
+      const rim = zone.rim;
+      const n = rim.length;
+      const rows = EFFECT_DOME_ROWS;
+      const enu = Cesium.Transforms.eastNorthUpToFixedFrame(
+        Cesium.Cartesian3.fromDegrees(item.lng, item.lat, h0)
+      );
+      const vertexCount = n * rows + 1;
+      const positions = new Float64Array(vertexCount * 3);
+      const local = new Cesium.Cartesian3();
+      const world = new Cesium.Cartesian3();
+      let p = 0;
+      const pushLocal = () => {
+        Cesium.Matrix4.multiplyByPoint(enu, local, world);
+        positions[p++] = world.x;
+        positions[p++] = world.y;
+        positions[p++] = world.z;
+      };
+      rim.forEach((point) => {
+        const east = Math.sin(point.az);
+        const north = Math.cos(point.az);
+        const phi0 = Math.atan2(point.dh, point.d);
+        for (let j = 0; j < rows; j++) {
+          if (j === 0) {
+            local.x = point.d * east;
+            local.y = point.d * north;
+            local.z = point.dh;
+          } else {
+            const phi = phi0 + (Cesium.Math.PI_OVER_TWO - phi0) * (j / rows);
+            const horizontal = radiusM * Math.cos(phi);
+            local.x = horizontal * east;
+            local.y = horizontal * north;
+            local.z = radiusM * Math.sin(phi);
+          }
+          pushLocal();
+        }
+      });
+      local.x = 0;
+      local.y = 0;
+      local.z = radiusM;
+      pushLocal();
+
+      const apex = vertexCount - 1;
+      const indices = Cesium.IndexDatatype.createTypedArray(
+        vertexCount,
+        n * (rows - 1) * 6 + n * 3
+      );
+      let q = 0;
+      for (let a = 0; a < n; a++) {
+        const b = (a + 1) % n;
+        for (let j = 0; j < rows - 1; j++) {
+          const a0 = a * rows + j;
+          const b0 = b * rows + j;
+          indices[q++] = a0;
+          indices[q++] = b0;
+          indices[q++] = b0 + 1;
+          indices[q++] = a0;
+          indices[q++] = b0 + 1;
+          indices[q++] = a0 + 1;
+        }
+        indices[q++] = a * rows + rows - 1;
+        indices[q++] = b * rows + rows - 1;
+        indices[q++] = apex;
+      }
+      return new Cesium.Geometry({
+        attributes: {
+          position: new Cesium.GeometryAttribute({
+            componentDatatype: Cesium.ComponentDatatype.DOUBLE,
+            componentsPerAttribute: 3,
+            values: positions,
+          }),
+        },
+        indices: indices,
+        primitiveType: Cesium.PrimitiveType.TRIANGLES,
+        boundingSphere: Cesium.BoundingSphere.fromVertices(positions),
+      });
+    }
+
+    function renderEffectDomes() {
+      effectDomePrimitives.removeAll();
+      const instances = [];
+      effectDomeEntries.forEach((entry) => {
+        const selected = entry.item.targetCardId === selectedTargetId;
+        entry.zones.forEach((zone) => {
+          instances.push(
+            new Cesium.GeometryInstance({
+              geometry: buildEffectDomeGeometry(entry.item, entry.h0, zone),
+              id: {
+                maapMeta: {
+                  type: "target",
+                  id: entry.item.targetCardId,
+                  part: "dome",
+                  color: zone.color,
+                },
+              },
+              attributes: {
+                color: Cesium.ColorGeometryInstanceAttribute.fromColor(
+                  Cesium.Color.fromCssColorString(zone.color).withAlpha(
+                    effectDomeAlpha(selected)
+                  )
+                ),
+              },
+            })
+          );
+        });
+      });
+      if (!instances.length) {
+        return;
+      }
+      effectDomePrimitives.add(
+        new Cesium.Primitive({
+          geometryInstances: instances,
+          appearance: new Cesium.PerInstanceColorAppearance({
+            flat: true,
+            translucent: true,
+            closed: false,
+          }),
+          asynchronous: false,
+        })
+      );
+    }
+
+    async function refineEffectTerrain(generation) {
+      if (!terrainReady) {
+        return;
+      }
+      const grouped = {};
+      targetMarkersCache.forEach((item) => {
+        (grouped[item.targetCardId] = grouped[item.targetCardId] || []).push(item);
+      });
+      const pending = new Map();
+      Object.values(grouped).forEach((groupItems) => {
+        const maxR = effectGroupMaxRadiusM(groupItems);
+        if (maxR <= 0) {
+          return;
+        }
+        groupItems.forEach((item) => {
+          const key = effectTerrainKey(item, maxR);
+          if (!effectTerrainCache.has(key) && !pending.has(key)) {
+            pending.set(key, {
+              key: key,
+              maxR: maxR,
+              cartos: effectTerrainSampleCartos(item, maxR),
+            });
+          }
+        });
+      });
+      if (!pending.size) {
+        return;
+      }
+      const jobs = Array.from(pending.values());
+      try {
+        const cartos = [];
+        jobs.forEach((job) => job.cartos.forEach((c) => cartos.push(c)));
+        const sampled = await Cesium.sampleTerrainMostDetailed(viewer.terrainProvider, cartos);
+        let offset = 0;
+        jobs.forEach((job) => {
+          const n = job.cartos.length;
+          const raw = sampled.slice(offset, offset + n).map((c) => c.height);
+          offset += n;
+          const h0 = Number.isFinite(raw[0]) ? raw[0] : 0;
+          effectTerrainCache.set(job.key, {
+            maxR: job.maxR,
+            steps: effectRadialSteps(job.maxR),
+            h0: h0,
+            heights: raw.map((h) => (Number.isFinite(h) ? h : h0)),
+          });
+        });
+      } catch (error) {
+        console.warn("Terrain sampling for effect zones failed", error);
+        return;
+      }
+      if (generation === effectTerrainGeneration) {
+        setTargetMarkers(targetMarkersCache);
+      }
+    }
+
+    function addTargetEffectRadii(item, selected) {
+      addTargetEffectRadiiForGroup([item], selected);
+    }
+
+    function maxTargetFocusRadiusM(item) {
+      if (!item) {
+        return 0;
+      }
+      let focus = Math.max(0, item.radiusM || 0, footprintHalfDiagonalM(item));
+      const radii = item.effectRadii || [];
+      for (let i = 0; i < radii.length; i++) {
+        focus = Math.max(focus, radii[i].radiusM || 0);
+      }
+      return focus;
+    }
+
+    function cameraHeightForRadiusM(radiusM) {
+      const radius = Math.max(radiusM || 0, 8);
+      return Math.min(Math.max(radius * 22, 320), 10000);
+    }
+
+    let targetMarkersCache = [];
+
+    function setMapLayerSpec(
+      source,
+      coordinateError,
+      analysisBoundary,
+      referenceRisk,
+      observationRange,
+      reviewArea,
+      effectSummary,
+      effectRadii,
+      confidence,
+      timestamp
+    ) {
+      currentLayerSpec = {
+        source: source || "กรอกเอง / แผนที่",
+        coordinateError: Math.max(0, coordinateError || 0),
+        analysisBoundary: Math.max(0, analysisBoundary || 0),
+        referenceRisk: Math.max(0, referenceRisk || 0),
+        observationRange: Math.max(0, observationRange || 0),
+        reviewArea: Math.max(0, reviewArea || 0),
+        effectSummary: effectSummary || "ไม่มีรายละเอียดผลกระทบอ้างอิง",
+        effectRadii: Array.isArray(effectRadii) ? effectRadii : [],
+        confidence: confidence || 0,
+        timestamp: timestamp || "ไม่ระบุ",
+      };
+    }
+
+    function createMarkerAt(lat, lng) {
+      const id = String(markerIdCounter++);
+      const circles = [];
+      circles.push(
+        addCircleEntity(
+          referenceSource,
+          lng,
+          lat,
+          currentLayerSpec.observationRange,
+          "#66FF99",
+          0.05
+        )
+      );
+      circles.push(
+        addCircleEntity(
+          referenceSource,
+          lng,
+          lat,
+          currentLayerSpec.analysisBoundary,
+          "#00FFFF",
+          0.06
+        )
+      );
+      circles.push(
+        addCircleEntity(
+          referenceSource,
+          lng,
+          lat,
+          currentLayerSpec.referenceRisk,
+          "#FFCC00",
+          0.1
+        )
+      );
+      circles.push(
+        addCircleEntity(
+          referenceSource,
+          lng,
+          lat,
+          currentLayerSpec.reviewArea,
+          "#CC88FF",
+          0.08
+        )
+      );
+      circles.push(
+        addCircleEntity(
+          referenceSource,
+          lng,
+          lat,
+          currentLayerSpec.coordinateError,
+          "#44AAFF",
+          0.16
+        )
+      );
+      for (let i = 0; i < currentLayerSpec.effectRadii.length; i++) {
+        const effectItem = currentLayerSpec.effectRadii[i];
+        circles.push(
+          addCircleEntity(
+            referenceSource,
+            lng,
+            lat,
+            Math.max(0, effectItem.radiusM || 0),
+            effectItem.color || "#E8FF88",
+            0.07
+          )
+        );
+      }
+      const marker = referenceSource.entities.add({
+        position: Cesium.Cartesian3.fromDegrees(lng, lat),
+        point: pointStyle("#FF0000", 8),
+        label: labelStyle("เป้า #" + (Object.keys(referenceMarkers).length + 1), "#00FF66"),
+      });
+      referenceMarkers[id] = { marker, circles: circles.filter(Boolean) };
+      document.title =
+        "LOG|[MAP] แสดงชั้นข้อมูลบนแผนที่ที่ " + lat.toFixed(4) + ", " + lng.toFixed(4);
+    }
+
+    function clearAllMarkers() {
+      referenceSource.entities.removeAll();
+      for (const id in referenceMarkers) {
+        delete referenceMarkers[id];
+      }
+      markerIdCounter = 0;
+      document.title = "LOG|[MAP] ล้างชั้นข้อมูลทั้งหมดแล้ว";
+    }
+
+    function addTargetRadiusCircle(item, selected) {
+      const radiusM = Math.max(0, item.radiusM || 0);
+      if (!radiusM) {
+        return null;
+      }
+      const color = selected ? "#FFD700" : "#44AAFF";
+      const circle = addCircleEntity(
+        targetSource,
+        item.lng,
+        item.lat,
+        radiusM,
+        color,
+        selected ? 0.2 : 0.14
+      );
+      if (circle) {
+        circle.maapMeta = {
+          type: "target",
+          id: item.targetCardId,
+          part: "radius",
+        };
+      }
+      return circle;
+    }
+
+    const FOOTPRINT_COLOR = "#FB923C";
+    const FOOTPRINT_COLOR_SELECTED = "#FFD700";
+
+    function footprintFillAlpha(selected) {
+      return selected ? 0.42 : 0.3;
+    }
+
+    function addTargetFootprint(item, selected) {
+      const footprint = item && item.footprint;
+      const ring = (footprint && footprint.polygon) || [];
+      if (ring.length < 3) {
+        return;
+      }
+      const flatDegrees = [];
+      ring.forEach((corner) => {
+        flatDegrees.push(corner[1], corner[0]);
+      });
+      const color = selected ? FOOTPRINT_COLOR_SELECTED : FOOTPRINT_COLOR;
+      const heightM = Math.max(0, footprint.heightM || 0);
+      const polygon = {
+        hierarchy: Cesium.Cartesian3.fromDegreesArray(flatDegrees),
+        material: Cesium.Color.fromCssColorString(color).withAlpha(
+          footprintFillAlpha(selected)
+        ),
+      };
+      if (heightM > 0) {
+        polygon.height = 0;
+        polygon.heightReference = Cesium.HeightReference.RELATIVE_TO_GROUND;
+        polygon.extrudedHeight = heightM;
+        polygon.extrudedHeightReference = Cesium.HeightReference.RELATIVE_TO_GROUND;
+      } else {
+        polygon.heightReference = Cesium.HeightReference.CLAMP_TO_GROUND;
+        polygon.classificationType = Cesium.ClassificationType.BOTH;
+      }
+      const dims =
+        "ขนาดจริง " +
+        Number(footprint.lengthM).toFixed(1) +
+        " × " +
+        Number(footprint.widthM).toFixed(1) +
+        " ม." +
+        (heightM > 0 ? " · สูง " + heightM.toFixed(1) + " ม." : "") +
+        " · ทิศ " +
+        Math.round(footprint.headingDeg || 0) +
+        "°";
+      const dimsLabel = labelStyle(dims, "#FED7AA", "#431407");
+      dimsLabel.font = "11px sans-serif";
+      dimsLabel.verticalOrigin = Cesium.VerticalOrigin.TOP;
+      dimsLabel.pixelOffset = new Cesium.Cartesian2(0, 12);
+      dimsLabel.distanceDisplayCondition = new Cesium.DistanceDisplayCondition(0, 6000);
+      const body = targetSource.entities.add({
+        position: Cesium.Cartesian3.fromDegrees(item.lng, item.lat),
+        polygon: polygon,
+        label: dimsLabel,
+      });
+      body.maapMeta = {
+        type: "target",
+        id: item.targetCardId,
+        part: "footprint",
+      };
+
+      const outlinePositions = Cesium.Cartesian3.fromDegreesArray(
+        flatDegrees.concat([flatDegrees[0], flatDegrees[1]])
+      );
+      const outline = targetSource.entities.add({
+        polyline: {
+          positions: outlinePositions,
+          width: selected ? 3 : 2,
+          clampToGround: true,
+          material: Cesium.Color.fromCssColorString(color).withAlpha(0.95),
+        },
+      });
+      outline.maapMeta = {
+        type: "target",
+        id: item.targetCardId,
+        part: "footprint-outline",
+      };
+    }
+
+    function footprintHalfDiagonalM(item) {
+      const footprint = item && item.footprint;
+      if (!footprint) {
+        return 0;
+      }
+      return Math.hypot(footprint.lengthM || 0, footprint.widthM || 0) / 2;
+    }
+
+    function targetMarkersForCard(targetCardId) {
+      return targetMarkersCache.filter((item) => item.targetCardId === targetCardId);
+    }
+
+    function primaryTargetMarker(targetCardId) {
+      const markers = targetMarkersForCard(targetCardId);
+      return (
+        markers.find((item) => item.isPrimary) ||
+        markers[0] ||
+        null
+      );
+    }
+
+    function addTargetPointConnector(items) {
+      if (!items || items.length < 2) {
+        return;
+      }
+      const sorted = items
+        .slice()
+        .sort((a, b) => (a.pointIndex || 0) - (b.pointIndex || 0));
+      const positions = buildGeodesicPolylinePositions(
+        sorted.map((item) => [item.lat, item.lng])
+      );
+      if (positions.length < 2) {
+        return;
+      }
+      const entity = targetSource.entities.add({
+        polyline: {
+          positions: positions,
+          width: 2,
+          clampToGround: true,
+          material: new Cesium.PolylineDashMaterialProperty({
+            color: Cesium.Color.fromCssColorString("#f87171").withAlpha(0.75),
+            dashLength: 10.0,
+          }),
+        },
+      });
+      entity.maapMeta = {
+        type: "target",
+        id: sorted[0].targetCardId,
+        part: "connector",
+      };
+    }
+
+    function setTargetMarkers(items) {
+      targetMarkersCache = items || [];
+      targetSource.entities.removeAll();
+      effectDomeEntries = [];
+      const grouped = {};
+      targetMarkersCache.forEach((item) => {
+        if (!grouped[item.targetCardId]) {
+          grouped[item.targetCardId] = [];
+        }
+        grouped[item.targetCardId].push(item);
+      });
+      Object.keys(grouped).forEach((targetCardId) => {
+        const groupItems = grouped[targetCardId];
+        const selected = targetCardId === selectedTargetId;
+        const primaryItem =
+          groupItems.find((item) => item.isPrimary) || groupItems[0];
+        addTargetPointConnector(groupItems);
+        addTargetEffectRadiiForGroup(groupItems, selected);
+        addTargetEffectDomes(groupItems);
+        groupItems.forEach((item) => addTargetFootprint(item, selected));
+        groupItems.forEach((item) => {
+          const isPrimary = !!item.isPrimary || item === primaryItem;
+          addTargetRadiusCircle(item, selected);
+          const pointColor =
+            item.targetCardId === selectedTargetId
+              ? isPrimary
+                ? "#FFD700"
+                : "#F59E0B"
+              : isPrimary
+                ? "#FF0000"
+                : "#FB7185";
+          const pointSize =
+            item.targetCardId === selectedTargetId
+              ? isPrimary
+                ? 12
+                : 10
+              : isPrimary
+                ? 9
+                : 8;
+          const entity = targetSource.entities.add({
+            position: Cesium.Cartesian3.fromDegrees(item.lng, item.lat),
+            point: pointStyle(pointColor, pointSize),
+            label: labelStyle(item.label || "Target", isPrimary ? "#00FF66" : "#fda4af"),
+          });
+          entity.maapMeta = {
+            type: "target",
+            id: item.targetCardId,
+            part: "point",
+            coordinateId: item.coordinateId || null,
+            isPrimary: isPrimary,
+          };
+        });
+      });
+      renderEffectDomes();
+      effectTerrainGeneration += 1;
+      refineEffectTerrain(effectTerrainGeneration);
+      if (selectedTargetId) {
+        drawRiskDirectionForTarget(selectedTargetId);
+      } else {
+        clearRiskDirectionArrows();
+      }
+    }
+
+    function highlightTarget(targetCardId) {
+      selectedTargetId = targetCardId;
+      ingressCorridorFocus = null;
+      clearIngressCorridorFlightRoute();
+      const entities = targetSource.entities.values;
+      for (let i = 0; i < entities.length; i++) {
+        const entity = entities[i];
+        if (!entity.maapMeta || entity.maapMeta.type !== "target") {
+          continue;
+        }
+        const selected = entity.maapMeta.id === targetCardId;
+        if (entity.maapMeta.part === "point") {
+          const isPrimary = entity.maapMeta.isPrimary !== false;
+          const pointColor = selected
+            ? isPrimary
+              ? "#FFD700"
+              : "#F59E0B"
+            : isPrimary
+              ? "#FF0000"
+              : "#FB7185";
+          const pointSize = selected ? (isPrimary ? 12 : 10) : isPrimary ? 9 : 8;
+          entity.point = pointStyle(pointColor, pointSize);
+        }
+        if (entity.maapMeta.part === "radius" && entity.ellipse) {
+          const color = selected ? "#FFD700" : "#44AAFF";
+          entity.ellipse.material = Cesium.Color.fromCssColorString(color).withAlpha(
+            selected ? 0.2 : 0.14
+          );
+          entity.ellipse.outlineColor = Cesium.Color.fromCssColorString(color).withAlpha(0.9);
+        }
+        if (entity.maapMeta.part === "footprint" && entity.polygon) {
+          const color = selected ? FOOTPRINT_COLOR_SELECTED : FOOTPRINT_COLOR;
+          entity.polygon.material = Cesium.Color.fromCssColorString(color).withAlpha(
+            footprintFillAlpha(selected)
+          );
+        }
+        if (entity.maapMeta.part === "footprint-outline" && entity.polyline) {
+          const color = selected ? FOOTPRINT_COLOR_SELECTED : FOOTPRINT_COLOR;
+          entity.polyline.width = selected ? 3 : 2;
+          entity.polyline.material = Cesium.Color.fromCssColorString(color).withAlpha(0.95);
+        }
+        if (entity.maapMeta.part === "effect" && entity.polyline) {
+          const baseColor = entity.maapMeta.color || "#E8FF88";
+          entity.polyline.width = selected
+            ? EFFECT_ZONE_LINE_WIDTH_SELECTED
+            : EFFECT_ZONE_LINE_WIDTH;
+          entity.polyline.material = new Cesium.PolylineDashMaterialProperty({
+            color: Cesium.Color.fromCssColorString(baseColor).withAlpha(
+              selected ? 1.0 : 0.95
+            ),
+            dashLength: EFFECT_ZONE_DASH_LENGTH,
+          });
+        }
+      }
+      renderEffectDomes();
+      if (targetCardId) {
+        drawRiskDirectionForTarget(targetCardId);
+        fitToTargetCard(targetCardId);
+      } else {
+        clearRiskDirectionArrows();
+      }
+    }
+
+    function setLinkMode(enabled) {
+      linkMode = !!enabled;
+      if (linkMode) {
+        routeAddMode = false;
+        setMeasureMode(false);
+        setPickCoordMode(false);
+      }
+      updateMapCursor();
+    }
+
+    function updatePickCoordHud(lat, lng) {
+      if (!pickCoordMode) {
+        pickCoordHud.style.display = "none";
+        return;
+      }
+      pickCoordHud.style.display = "block";
+      if (lat !== undefined && lng !== undefined) {
+        pickCoordValueEl.textContent =
+          "Lat " + lat.toFixed(5) + ", Lng " + lng.toFixed(5);
+        pickCoordHintEl.textContent = "คัดลอกได้จากแถบเครื่องมือด้านบน";
+      } else {
+        pickCoordValueEl.textContent = "Lat —, Lng —";
+        pickCoordHintEl.textContent = "คลิกบนแผนที่เพื่อรับพิกัด";
+      }
+    }
+
+    function renderPickedCoordinate(lat, lng) {
+      pickCoordSource.entities.removeAll();
+      pickCoordSource.entities.add({
+        position: Cesium.Cartesian3.fromDegrees(lng, lat, 120),
+        point: {
+          pixelSize: 12,
+          color: Cesium.Color.fromCssColorString("#34d399"),
+          outlineColor: Cesium.Color.fromCssColorString("#0f172a"),
+          outlineWidth: 2,
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
+        label: {
+          text: lat.toFixed(5) + "\n" + lng.toFixed(5),
+          font: "bold 11px sans-serif",
+          fillColor: Cesium.Color.fromCssColorString("#6ee7b7"),
+          outlineColor: Cesium.Color.fromCssColorString("#0f172a"),
+          outlineWidth: 2,
+          style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+          verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+          pixelOffset: new Cesium.Cartesian2(0, -12),
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
+      });
+      updatePickCoordHud(lat, lng);
+      syncMapEvent("pick_coord", [lat, lng]);
+    }
+
+    function clearPickedCoordinate() {
+      pickCoordSource.entities.removeAll();
+      updatePickCoordHud();
+    }
+
+    function setPickCoordMode(enabled) {
+      pickCoordMode = !!enabled;
+      if (pickCoordMode) {
+        linkMode = false;
+        routeAddMode = false;
+        setMeasureMode(false);
+        updatePickCoordHud();
+      } else {
+        pickCoordHud.style.display = "none";
+      }
+      updateMapCursor();
+    }
+
+    function setRouteAddMode(enabled) {
+      routeAddMode = !!enabled;
+      if (routeAddMode) {
+        linkMode = false;
+        setMeasureMode(false);
+        setPickCoordMode(false);
+        setFlightRouteEditMode(true);
+      }
+      updateMapCursor();
+    }
+
+    function pickLatLngFromClick(click) {
+      const windowPosition = click.position;
+      const scene = viewer.scene;
+      let cartesian = undefined;
+      // Prefer globe surface so pins land on imagery/terrain (not depth-buffer of floating entities).
+      const ray = viewer.camera.getPickRay(windowPosition);
+      if (ray) {
+        cartesian = scene.globe.pick(ray, scene);
+      }
+      if (!Cesium.defined(cartesian)) {
+        cartesian = viewer.camera.pickEllipsoid(
+          windowPosition,
+          scene.globe.ellipsoid
+        );
+      }
+      if (!Cesium.defined(cartesian) && scene.pickPositionSupported) {
+        cartesian = scene.pickPosition(windowPosition);
+      }
+      if (!Cesium.defined(cartesian)) {
+        return null;
+      }
+      const cartographic = Cesium.Cartographic.fromCartesian(cartesian);
+      return [
+        Cesium.Math.toDegrees(cartographic.latitude),
+        Cesium.Math.toDegrees(cartographic.longitude),
+      ];
+    }
+
+    function updateMapCursor() {
+      if (
+        measureMode ||
+        pickCoordMode ||
+        routePickMode ||
+        routeAddMode ||
+        flightRouteEditActive ||
+        (detectionEditActive && detectionAddMode)
+      ) {
+        viewer.canvas.style.cursor = "crosshair";
+      } else if (linkMode) {
+        viewer.canvas.style.cursor = "cell";
+      } else {
+        viewer.canvas.style.cursor = "default";
+      }
+    }
+
+    function setDetectionEditMode(enabled) {
+      detectionEditActive = !!enabled;
+      if (!detectionEditActive) {
+        detectionAddMode = false;
+        selectedDetectionId = null;
+      }
+      refreshDetectionHighlights();
+      updateMapCursor();
+    }
+
+    function setDetectionAddMode(enabled) {
+      detectionAddMode = !!enabled && detectionEditActive;
+      updateMapCursor();
+    }
+
+    function highlightDetectionObject(objectId) {
+      selectedDetectionId = objectId || null;
+      refreshDetectionHighlights();
+    }
+
+    function refreshDetectionHighlights() {
+      Object.entries(detectionEntities).forEach(([id, entity]) => {
+        if (!entity || !entity.polygon) {
+          return;
+        }
+        const item = entity.maapDetectionItem || {};
+        const color = detectionColor(item.risk);
+        const selected = id === selectedDetectionId;
+        entity.polygon.outlineWidth = selected ? 5 : 3;
+        entity.polygon.material = Cesium.Color.fromCssColorString(color).withAlpha(
+          selected ? 0.38 : 0.22
+        );
+      });
+    }
+
+    function formatDistanceM(distanceM) {
+      const meters = Math.max(distanceM || 0, 0);
+      if (meters >= 1000) {
+        return (meters / 1000).toFixed(2) + " km";
+      }
+      return Math.round(meters) + " m";
+    }
+
+    function geodesicDistanceM(lat1, lng1, lat2, lng2) {
+      const start = Cesium.Cartographic.fromDegrees(lng1, lat1);
+      const end = Cesium.Cartographic.fromDegrees(lng2, lat2);
+      const geodesic = new Cesium.EllipsoidGeodesic(start, end);
+      return geodesic.surfaceDistance;
+    }
+
+    function buildGeodesicPolylinePositions(points) {
+      if (!points || points.length < 2) {
+        return [];
+      }
+      const positions = [];
+      const segmentsPerLeg = 32;
+      for (let leg = 0; leg < points.length - 1; leg += 1) {
+        const startPoint = points[leg];
+        const endPoint = points[leg + 1];
+        const start = Cesium.Cartographic.fromDegrees(startPoint[1], startPoint[0]);
+        const end = Cesium.Cartographic.fromDegrees(endPoint[1], endPoint[0]);
+        const geodesic = new Cesium.EllipsoidGeodesic(start, end);
+        for (let i = 0; i <= segmentsPerLeg; i += 1) {
+          if (leg > 0 && i === 0) {
+            continue;
+          }
+          const sample = geodesic.interpolateUsingFraction(i / segmentsPerLeg);
+          positions.push(
+            Cesium.Cartesian3.fromRadians(sample.longitude, sample.latitude, 0)
+          );
+        }
+      }
+      return positions;
+    }
+
+    function midpointLatLng(lat1, lng1, lat2, lng2) {
+      const start = Cesium.Cartographic.fromDegrees(lng1, lat1);
+      const end = Cesium.Cartographic.fromDegrees(lng2, lat2);
+      const geodesic = new Cesium.EllipsoidGeodesic(start, end);
+      const mid = geodesic.interpolateUsingFraction(0.5);
+      return [
+        Cesium.Math.toDegrees(mid.latitude),
+        Cesium.Math.toDegrees(mid.longitude),
+      ];
+    }
+
+    function currentActiveRadiusM() {
+      if (!measureState.activeRadius) {
+        return 0;
+      }
+      const center = measureState.activeRadius.center;
+      const edge = measureState.activeRadius.edge;
+      return geodesicDistanceM(center[0], center[1], edge[0], edge[1]);
+    }
+
+    function emitMeasureUpdate() {
+      const activeTotal = lineTerrainStats(measureState.activePoints).terrainM;
+      const completedTotal = measureState.completedLines.reduce(
+        (sum, line) => sum + line.totalM,
+        0
+      );
+      const grandTotal = activeTotal + completedTotal;
+      let radiusM = currentActiveRadiusM();
+      if (!radiusM && measureState.completedCircles.length) {
+        radiusM =
+          measureState.completedCircles[measureState.completedCircles.length - 1]
+            .radiusM;
+      }
+      document.title =
+        "MAAP_SYNC|measure_update|" +
+        grandTotal.toFixed(1) +
+        "|" +
+        radiusM.toFixed(1);
+    }
+
+    function measureHasContent() {
+      return (
+        measureState.completedLines.length > 0 ||
+        measureState.completedCircles.length > 0 ||
+        measureState.activePoints.length > 0 ||
+        measureState.activeRadius !== null
+      );
+    }
+
+    function updateMeasureHud() {
+      if (!measureMode && !measureHasContent()) {
+        measureHud.style.display = "none";
+        return;
+      }
+      measureHud.style.display = "block";
+      if (measureToolType === "radius") {
+        measureHintEl.textContent =
+          "คลิกกำหนดจุดศูนย์กลาง · เลื่อนเมาส์ดูรัศมี · คลิกอีกครั้งยืนยัน · คลิกขวายกเลิกวงปัจจุบัน";
+      } else {
+        measureHintEl.textContent =
+          "คลิกเพิ่มจุด · คลิกขวา/ดับเบิลคลิกจบเส้น · ปุ่ม Clear ล้างทั้งหมด";
+      }
+
+      const activeStats = lineTerrainStats(measureState.activePoints);
+      const activeTotal = activeStats.terrainM;
+      const completedStats = measureState.completedLines.map((line) =>
+        lineTerrainStats(line.points)
+      );
+      const completedTotal = completedStats.reduce((sum, s) => sum + s.terrainM, 0);
+      const grandTotal = activeTotal + completedTotal;
+      const grandHorizontal =
+        activeStats.horizontalM +
+        completedStats.reduce((sum, s) => sum + s.horizontalM, 0);
+      const activeRadiusM = currentActiveRadiusM();
+      const headerParts = [];
+      if (measureToolType === "distance" || grandTotal > 0) {
+        headerParts.push("ระยะตามพื้น " + formatDistanceM(grandTotal));
+        if (grandTotal - grandHorizontal >= 1) {
+          headerParts.push("ราบ " + formatDistanceM(grandHorizontal));
+        }
+      }
+      if (measureToolType === "radius" || measureState.completedCircles.length) {
+        const radiusLabel = activeRadiusM
+          ? formatDistanceM(activeRadiusM)
+          : measureState.completedCircles.length
+            ? formatDistanceM(
+                measureState.completedCircles[
+                  measureState.completedCircles.length - 1
+                ].radiusM
+              )
+            : "0 m";
+        headerParts.push("รัศมี " + radiusLabel);
+      }
+      measureTotalEl.textContent = headerParts.join(" · ");
+
+      const describeLine = (stats, points) =>
+        "ตามพื้น " +
+        formatDistanceM(stats.terrainM) +
+        " · ราบ " +
+        formatDistanceM(stats.horizontalM) +
+        " · ขึ้น +" +
+        Math.round(stats.climbM) +
+        " / ลง −" +
+        Math.round(stats.descentM) +
+        " m · " +
+        points.length +
+        " จุด";
+      const lines = [];
+      measureState.completedLines.forEach((line, index) => {
+        lines.push("เส้น " + (index + 1) + ": " + describeLine(completedStats[index], line.points));
+      });
+      if (measureState.activePoints.length >= 2) {
+        lines.push(
+          "เส้นปัจจุบัน: " + describeLine(activeStats, measureState.activePoints) + " (ยังไม่จบ)"
+        );
+      }
+      if (measureState.activePoints.length || measureState.completedLines.length) {
+        lines.push(terrainReady ? "อิงความสูง terrain (ArcGIS World Elevation)" : "terrain ยังไม่พร้อม — คำนวณบนพื้นราบ");
+      }
+      measureState.completedCircles.forEach((circle, index) => {
+        lines.push(
+          "วง " + (index + 1) + ": รัศมี " + formatDistanceM(circle.radiusM)
+        );
+      });
+      if (measureState.activeRadius && activeRadiusM > 0) {
+        lines.push(
+          "วงปัจจุบัน: รัศมี " + formatDistanceM(activeRadiusM) + " (ยังไม่ยืนยัน)"
+        );
+      }
+      measureSegmentsEl.textContent = lines.join("\n");
+      emitMeasureUpdate();
+    }
+
+    function renderRadiusCircle(center, edge, options) {
+      const preview = options && options.preview;
+      const radiusM = geodesicDistanceM(center[0], center[1], edge[0], edge[1]);
+      if (radiusM <= 0) {
+        measureSource.entities.add({
+          position: Cesium.Cartesian3.fromDegrees(center[1], center[0], 0),
+          point: {
+            pixelSize: 10,
+            color: Cesium.Color.fromCssColorString("#34d399"),
+            outlineColor: Cesium.Color.WHITE,
+            outlineWidth: 2,
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          },
+          label: {
+            text: "ศูนย์กลาง",
+            font: "bold 14px sans-serif",
+            fillColor: Cesium.Color.fromCssColorString("#6ee7b7"),
+            outlineColor: Cesium.Color.fromCssColorString("#0f172a"),
+            outlineWidth: 2,
+            style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+            verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+            pixelOffset: new Cesium.Cartesian2(0, -12),
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          },
+        });
+        return radiusM;
+      }
+      measureSource.entities.add({
+        position: Cesium.Cartesian3.fromDegrees(center[1], center[0], 0),
+        ellipse: {
+          semiMajorAxis: radiusM,
+          semiMinorAxis: radiusM,
+          material: Cesium.Color.fromCssColorString("#34d399").withAlpha(
+            preview ? 0.14 : 0.22
+          ),
+          outline: true,
+          outlineColor: Cesium.Color.fromCssColorString(
+            preview ? "#6ee7b7" : "#34d399"
+          ),
+          outlineWidth: preview ? 2 : 3,
+          height: 0,
+        },
+      });
+      const linePositions = buildGeodesicPolylinePositions([center, edge]);
+      if (linePositions.length >= 2) {
+        measureSource.entities.add({
+          polyline: {
+            positions: linePositions,
+            width: preview ? 2 : 3,
+            clampToGround: true,
+            material: new Cesium.PolylineDashMaterialProperty({
+              color: Cesium.Color.fromCssColorString("#6ee7b7").withAlpha(0.95),
+              dashLength: 10,
+            }),
+          },
+        });
+      }
+      const mid = midpointLatLng(center[0], center[1], edge[0], edge[1]);
+      measureSource.entities.add({
+        position: Cesium.Cartesian3.fromDegrees(center[1], center[0], 0),
+        point: {
+          pixelSize: 10,
+          color: Cesium.Color.fromCssColorString("#34d399"),
+          outlineColor: Cesium.Color.WHITE,
+          outlineWidth: 2,
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
+      });
+      measureSource.entities.add({
+        position: Cesium.Cartesian3.fromDegrees(edge[1], edge[0], 0),
+        point: {
+          pixelSize: 8,
+          color: Cesium.Color.fromCssColorString("#a7f3d0"),
+          outlineColor: Cesium.Color.fromCssColorString("#0f172a"),
+          outlineWidth: 2,
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
+      });
+      measureSource.entities.add({
+        position: Cesium.Cartesian3.fromDegrees(mid[1], mid[0], 0),
+        label: {
+          text: "R " + formatDistanceM(radiusM),
+          font: "bold 15px sans-serif",
+          fillColor: Cesium.Color.WHITE,
+          outlineColor: Cesium.Color.fromCssColorString("#064e3b"),
+          outlineWidth: 3,
+          style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+          verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+          pixelOffset: new Cesium.Cartesian2(0, -8),
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          showBackground: true,
+          backgroundColor: Cesium.Color.fromCssColorString("#047857").withAlpha(0.88),
+          backgroundPadding: new Cesium.Cartesian2(8, 5),
+        },
+      });
+      return radiusM;
+    }
+
+    function renderMeasureGraphics() {
+      measureSource.entities.removeAll();
+      const allLines = measureState.completedLines.map((line) => line.points);
+      if (measureState.activePoints.length >= 2) {
+        allLines.push(measureState.activePoints);
+      } else if (measureState.activePoints.length === 1) {
+        const point = measureState.activePoints[0];
+        measureSource.entities.add({
+          position: Cesium.Cartesian3.fromDegrees(point[1], point[0], 0),
+          point: {
+            pixelSize: 9,
+            color: Cesium.Color.fromCssColorString("#fbbf24"),
+            outlineColor: Cesium.Color.WHITE,
+            outlineWidth: 2,
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          },
+        });
+        clampMeasureEntitiesToGround();
+        updateMeasureHud();
+        return;
+      }
+
+      allLines.forEach((points, lineIndex) => {
+        const positions = buildGeodesicPolylinePositions(points);
+        if (positions.length < 2) {
+          return;
+        }
+        const isActive =
+          lineIndex === allLines.length - 1 &&
+          measureState.activePoints.length >= 2;
+        measureSource.entities.add({
+          polyline: {
+            positions,
+            width: isActive ? 5 : 4,
+            clampToGround: true,
+            material: isActive
+              ? new Cesium.PolylineDashMaterialProperty({
+                  color: Cesium.Color.fromCssColorString("#fbbf24").withAlpha(0.95),
+                  dashLength: 14,
+                })
+              : Cesium.Color.fromCssColorString("#fbbf24").withAlpha(0.95),
+          },
+        });
+        for (let i = 0; i < points.length - 1; i += 1) {
+          const dist = measureSegmentStats(points[i], points[i + 1]).terrainM;
+          const mid = midpointLatLng(
+            points[i][0],
+            points[i][1],
+            points[i + 1][0],
+            points[i + 1][1]
+          );
+          measureSource.entities.add({
+            position: Cesium.Cartesian3.fromDegrees(mid[1], mid[0], 0),
+            label: {
+              text: formatDistanceM(dist),
+              font: "bold 14px sans-serif",
+              fillColor: Cesium.Color.fromCssColorString("#fde68a"),
+              outlineColor: Cesium.Color.fromCssColorString("#0f172a"),
+              outlineWidth: 3,
+              style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+              verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+              pixelOffset: new Cesium.Cartesian2(0, -8),
+              disableDepthTestDistance: Number.POSITIVE_INFINITY,
+              showBackground: true,
+              backgroundColor: Cesium.Color.fromCssColorString("#0f172a").withAlpha(0.72),
+              backgroundPadding: new Cesium.Cartesian2(6, 4),
+            },
+          });
+        }
+        points.forEach((point, pointIndex) => {
+          measureSource.entities.add({
+            position: Cesium.Cartesian3.fromDegrees(point[1], point[0], 0),
+            point: {
+              pixelSize: pointIndex === 0 || pointIndex === points.length - 1 ? 10 : 8,
+              color: Cesium.Color.fromCssColorString("#fbbf24"),
+              outlineColor: Cesium.Color.WHITE,
+              outlineWidth: 2,
+              disableDepthTestDistance: Number.POSITIVE_INFINITY,
+            },
+          });
+        });
+        const total = lineTerrainStats(points).terrainM;
+        const end = points[points.length - 1];
+        measureSource.entities.add({
+          position: Cesium.Cartesian3.fromDegrees(end[1], end[0], 0),
+          label: {
+            text: "Σ " + formatDistanceM(total),
+            font: "bold 15px sans-serif",
+            fillColor: Cesium.Color.WHITE,
+            outlineColor: Cesium.Color.fromCssColorString("#0f172a"),
+            outlineWidth: 3,
+            style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+            verticalOrigin: Cesium.VerticalOrigin.TOP,
+            pixelOffset: new Cesium.Cartesian2(0, 10),
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+            showBackground: true,
+            backgroundColor: Cesium.Color.fromCssColorString("#b45309").withAlpha(0.88),
+            backgroundPadding: new Cesium.Cartesian2(8, 5),
+          },
+        });
+      });
+
+      measureState.completedCircles.forEach((circle) => {
+        renderRadiusCircle(circle.center, circle.edge, { preview: false });
+      });
+      if (measureState.activeRadius) {
+        renderRadiusCircle(
+          measureState.activeRadius.center,
+          measureState.activeRadius.edge,
+          { preview: true }
+        );
+      }
+      clampMeasureEntitiesToGround();
+      updateMeasureHud();
+    }
+
+    function clampMeasureEntitiesToGround() {
+      const clamp = Cesium.HeightReference.CLAMP_TO_GROUND;
+      measureSource.entities.values.forEach((entity) => {
+        if (entity.point) entity.point.heightReference = clamp;
+        if (entity.label) entity.label.heightReference = clamp;
+        if (entity.ellipse) {
+          entity.ellipse.heightReference = clamp;
+          entity.ellipse.classificationType = Cesium.ClassificationType.BOTH;
+        }
+      });
+    }
+
+    function pickMeasureLatLng(event) {
+      const scene = viewer.scene;
+      let cartesian;
+      const ray = viewer.camera.getPickRay(event.position);
+      if (ray) {
+        cartesian = scene.globe.pick(ray, scene);
+      }
+      if (!Cesium.defined(cartesian)) {
+        cartesian = viewer.camera.pickEllipsoid(event.position, scene.globe.ellipsoid);
+      }
+      if (!Cesium.defined(cartesian)) {
+        return null;
+      }
+      const cartographic = Cesium.Cartographic.fromCartesian(cartesian);
+      return [
+        Cesium.Math.toDegrees(cartographic.latitude),
+        Cesium.Math.toDegrees(cartographic.longitude),
+        Number.isFinite(cartographic.height) ? cartographic.height : 0,
+      ];
+    }
+
+    function globeSurfaceHeightM(lat, lng) {
+      const h = viewer.scene.globe.getHeight(Cesium.Cartographic.fromDegrees(lng, lat));
+      return Number.isFinite(h) ? h : null;
+    }
+
+    const MEASURE_SAMPLE_SPACING_M = 10;
+    const MEASURE_MAX_SAMPLES_PER_LEG = 256;
+    const measureTerrainCache = new Map();
+    let measureRefineTimer = null;
+    let measureRefineBusy = false;
+
+    function measureSegmentKey(a, b) {
+      return [a[0], a[1], b[0], b[1]].map((v) => v.toFixed(7)).join(",");
+    }
+
+    function measureLegSamples(a, b) {
+      const start = Cesium.Cartographic.fromDegrees(a[1], a[0]);
+      const end = Cesium.Cartographic.fromDegrees(b[1], b[0]);
+      const geodesic = new Cesium.EllipsoidGeodesic(start, end);
+      const horizontalM = geodesic.surfaceDistance || 0;
+      const count = Math.min(
+        MEASURE_MAX_SAMPLES_PER_LEG,
+        Math.max(2, Math.ceil(horizontalM / MEASURE_SAMPLE_SPACING_M))
+      );
+      const samples = [];
+      for (let i = 0; i <= count; i += 1) {
+        samples.push(geodesic.interpolateUsingFraction(i / count));
+      }
+      return { horizontalM, samples };
+    }
+
+    function profileStats(horizontalM, heights) {
+      const steps = heights.length - 1;
+      const stepM = steps > 0 ? horizontalM / steps : 0;
+      let terrainM = 0;
+      let climbM = 0;
+      let descentM = 0;
+      for (let i = 0; i < steps; i += 1) {
+        const dh = heights[i + 1] - heights[i];
+        terrainM += Math.hypot(stepM, dh);
+        if (dh > 0) climbM += dh;
+        else descentM -= dh;
+      }
+      return {
+        horizontalM,
+        terrainM: Math.max(terrainM, horizontalM),
+        climbM,
+        descentM,
+        startH: heights[0],
+        endH: heights[heights.length - 1],
+      };
+    }
+
+    function measureSegmentStats(a, b) {
+      const cached = measureTerrainCache.get(measureSegmentKey(a, b));
+      if (cached) {
+        return cached;
+      }
+      const { horizontalM, samples } = measureLegSamples(a, b);
+      const ha = Number.isFinite(a[2]) ? a[2] : globeSurfaceHeightM(a[0], a[1]) || 0;
+      const hb = Number.isFinite(b[2]) ? b[2] : globeSurfaceHeightM(b[0], b[1]) || 0;
+      const last = samples.length - 1;
+      const heights = samples.map((s, i) => {
+        const h = viewer.scene.globe.getHeight(s);
+        return Number.isFinite(h) ? h : ha + ((hb - ha) * i) / Math.max(last, 1);
+      });
+      return Object.assign(profileStats(horizontalM, heights), { refined: false });
+    }
+
+    function lineTerrainStats(points) {
+      const total = { horizontalM: 0, terrainM: 0, climbM: 0, descentM: 0 };
+      for (let i = 0; i < points.length - 1; i += 1) {
+        const s = measureSegmentStats(points[i], points[i + 1]);
+        total.horizontalM += s.horizontalM;
+        total.terrainM += s.terrainM;
+        total.climbM += s.climbM;
+        total.descentM += s.descentM;
+      }
+      return total;
+    }
+
+    function scheduleMeasureTerrainRefine() {
+      if (measureRefineTimer) {
+        clearTimeout(measureRefineTimer);
+      }
+      measureRefineTimer = setTimeout(refineMeasureTerrain, 250);
+    }
+
+    async function refineMeasureTerrain() {
+      measureRefineTimer = null;
+      if (!terrainReady || measureRefineBusy) {
+        return;
+      }
+      const lines = measureState.completedLines.map((line) => line.points);
+      if (measureState.activePoints.length >= 2) {
+        lines.push(measureState.activePoints);
+      }
+      const pending = [];
+      lines.forEach((points) => {
+        for (let i = 0; i < points.length - 1; i += 1) {
+          const key = measureSegmentKey(points[i], points[i + 1]);
+          if (!measureTerrainCache.has(key)) {
+            pending.push({ key, leg: measureLegSamples(points[i], points[i + 1]) });
+          }
+        }
+      });
+      if (!pending.length) {
+        return;
+      }
+      measureRefineBusy = true;
+      try {
+        const cartos = [];
+        pending.forEach((item) => {
+          item.leg.samples.forEach((s) => cartos.push(s.clone()));
+        });
+        const sampled = await Cesium.sampleTerrainMostDetailed(viewer.terrainProvider, cartos);
+        let offset = 0;
+        pending.forEach((item) => {
+          const n = item.leg.samples.length;
+          const heights = sampled
+            .slice(offset, offset + n)
+            .map((c) => (Number.isFinite(c.height) ? c.height : 0));
+          offset += n;
+          measureTerrainCache.set(
+            item.key,
+            Object.assign(profileStats(item.leg.horizontalM, heights), { refined: true })
+          );
+        });
+        measureState.completedLines.forEach((line) => {
+          line.totalM = lineTerrainStats(line.points).terrainM;
+        });
+        renderMeasureGraphics();
+      } catch (error) {
+        console.warn("Terrain sampling for measure failed", error);
+      } finally {
+        measureRefineBusy = false;
+      }
+    }
+
+    function addMeasurePoint(lat, lng, heightM) {
+      const points = measureState.activePoints;
+      const prev = points[points.length - 1];
+      // LEFT_DOUBLE_CLICK is preceded by two LEFT_CLICKs on the same spot.
+      if (prev && geodesicDistanceM(prev[0], prev[1], lat, lng) < 0.5) {
+        return;
+      }
+      points.push([lat, lng, Number.isFinite(heightM) ? heightM : 0]);
+      renderMeasureGraphics();
+      scheduleMeasureTerrainRefine();
+    }
+
+    function handleRadiusClick(lat, lng) {
+      if (!measureState.activeRadius) {
+        measureState.activeRadius = {
+          center: [lat, lng],
+          edge: [lat, lng],
+        };
+        renderMeasureGraphics();
+        return;
+      }
+      const radiusM = geodesicDistanceM(
+        measureState.activeRadius.center[0],
+        measureState.activeRadius.center[1],
+        lat,
+        lng
+      );
+      if (radiusM < 1) {
+        return;
+      }
+      measureState.completedCircles.push({
+        center: measureState.activeRadius.center.slice(),
+        edge: [lat, lng],
+        radiusM,
+      });
+      measureState.activeRadius = null;
+      renderMeasureGraphics();
+    }
+
+    function cancelActiveRadius() {
+      measureState.activeRadius = null;
+      renderMeasureGraphics();
+    }
+
+    function finishActiveMeasureLine() {
+      if (measureState.activePoints.length < 2) {
+        measureState.activePoints = [];
+        renderMeasureGraphics();
+        return;
+      }
+      measureState.completedLines.push({
+        points: measureState.activePoints.slice(),
+        totalM: lineTerrainStats(measureState.activePoints).terrainM,
+      });
+      measureState.activePoints = [];
+      renderMeasureGraphics();
+    }
+
+    function clearMeasure() {
+      measureState.activePoints = [];
+      measureState.completedLines = [];
+      measureState.activeRadius = null;
+      measureState.completedCircles = [];
+      measureTerrainCache.clear();
+      measureSource.entities.removeAll();
+      updateMeasureHud();
+      document.title = "MAAP_SYNC|measure_update|0|0";
+    }
+
+    function setMeasureType(toolType) {
+      const nextType = toolType === "radius" ? "radius" : "distance";
+      if (nextType === measureToolType) {
+        return;
+      }
+      finishActiveMeasureLine();
+      cancelActiveRadius();
+      measureToolType = nextType;
+      updateMeasureHud();
+    }
+
+    function setMeasureMode(enabled) {
+      measureMode = !!enabled;
+      if (measureMode) {
+        linkMode = false;
+        pickCoordMode = false;
+        pickCoordHud.style.display = "none";
+        measureHud.style.display = "block";
+      } else {
+        finishActiveMeasureLine();
+        cancelActiveRadius();
+        if (!measureHasContent()) {
+          measureHud.style.display = "none";
+        }
+      }
+      updateMapCursor();
+      updateMeasureHud();
+    }
+
+    function fitToTarget(lat, lng, focusRadiusM) {
+      const height = cameraHeightForRadiusM(focusRadiusM);
+      flyToDegrees(lng, lat, height, 1.0);
+    }
+
+    function emitDetectionReady(tileWaitMs) {
+      const wait = tileWaitMs || 700;
+      setTimeout(function () {
+        document.title = "MAAP_SYNC|detection_ready|" + Date.now();
+      }, wait);
+    }
+
+    function fitToDetectionArea(lat, lng, radiusM) {
+      const radius = Math.max(radiusM || 20, 20);
+      const tileWaitMs = Math.min(1500, Math.max(800, 2200 - radius * 5));
+      const latDelta = radius / 111320.0;
+      const lngScale = Math.max(Math.cos(Cesium.Math.toRadians(lat)), 0.1);
+      const lngDelta = radius / (111320.0 * lngScale);
+      const rectangle = Cesium.Rectangle.fromDegrees(
+        lng - lngDelta,
+        lat - latDelta,
+        lng + lngDelta,
+        lat + latDelta
+      );
+      let readyEmitted = false;
+      function emitOnce() {
+        if (readyEmitted) {
+          return;
+        }
+        readyEmitted = true;
+        emitDetectionReady(tileWaitMs);
+      }
+      viewer.camera.flyTo({
+        destination: rectangle,
+        orientation: {
+          heading: 0,
+          pitch: Cesium.Math.toRadians(-90),
+          roll: 0,
+        },
+        duration: 0.9,
+        complete: emitOnce,
+        cancel: emitOnce,
+      });
+      setTimeout(emitOnce, tileWaitMs + 1200);
+    }
+
+    function fitToTargetCard(targetCardId) {
+      const markers = targetMarkersForCard(targetCardId);
+      if (!markers.length) {
+        return;
+      }
+      if (markers.length === 1) {
+        const item = markers[0];
+        fitToTarget(item.lat, item.lng, maxTargetFocusRadiusM(item));
+        return;
+      }
+      let minLat = markers[0].lat;
+      let maxLat = markers[0].lat;
+      let minLng = markers[0].lng;
+      let maxLng = markers[0].lng;
+      let maxRadius = 0;
+      for (let i = 0; i < markers.length; i += 1) {
+        const item = markers[i];
+        minLat = Math.min(minLat, item.lat);
+        maxLat = Math.max(maxLat, item.lat);
+        minLng = Math.min(minLng, item.lng);
+        maxLng = Math.max(maxLng, item.lng);
+        maxRadius = Math.max(maxRadius, maxTargetFocusRadiusM(item));
+      }
+      const centerLat = (minLat + maxLat) / 2;
+      const centerLng = (minLng + maxLng) / 2;
+      const spanM = Math.max(
+        geodesicDistanceM(centerLat, centerLng, minLat, minLng),
+        geodesicDistanceM(centerLat, centerLng, maxLat, maxLng),
+        maxRadius
+      );
+      fitToTarget(centerLat, centerLng, spanM * 2.4);
+    }
+
+    function markerForIngressCorridor(targetCardId, coordinateId) {
+      const markers = targetMarkersForCard(targetCardId);
+      if (!markers.length) {
+        return null;
+      }
+      if (coordinateId) {
+        return (
+          markers.find((item) => (item.coordinateId || null) === coordinateId) ||
+          markers[0]
+        );
+      }
+      return (
+        markers.find((item) => item.isPrimary !== false) ||
+        markers[0]
+      );
+    }
+
+    function ingressOptionForMarker(marker, rank) {
+      if (!marker || !marker.lowestRiskDirection || !marker.lowestRiskDirection.available) {
+        return null;
+      }
+      const options = (marker.lowestRiskDirection.recommendedOptions || []).slice(0, 3);
+      return (
+        options.find((option) => Number(option.rank || 0) === rank) ||
+        options[rank - 1] ||
+        null
+      );
+    }
+
+    function fitToIngressCorridor(targetCardId, coordinateId, rank) {
+      const marker = markerForIngressCorridor(targetCardId, coordinateId);
+      if (!marker) {
+        fitToTargetCard(targetCardId);
+        return;
+      }
+      const option = ingressOptionForMarker(marker, rank);
+      if (!option) {
+        fitToTarget(marker.lat, marker.lng, maxTargetFocusRadiusM(marker));
+        return;
+      }
+      const route = option.borderRoute || {};
+      const points = [[marker.lat, marker.lng]];
+      if (route.nearestBorder) {
+        points.push([Number(route.nearestBorder.lat), Number(route.nearestBorder.lng)]);
+      }
+      if (route.entry) {
+        points.push([Number(route.entry.lat), Number(route.entry.lng)]);
+      }
+      if (route.exit) {
+        points.push([Number(route.exit.lat), Number(route.exit.lng)]);
+      }
+      const tip = destinationFromBearing(
+        marker.lat,
+        marker.lng,
+        Number(option.bearingDeg || 0),
+        Math.max(Number(marker.lowestRiskDirection.arrowLengthM || 0), 40) *
+          (rank === 1 ? 1.0 : rank === 2 ? 0.88 : 0.76)
+      );
+      points.push([tip.lat, tip.lng]);
+      let minLat = points[0][0];
+      let maxLat = points[0][0];
+      let minLng = points[0][1];
+      let maxLng = points[0][1];
+      for (let i = 1; i < points.length; i += 1) {
+        minLat = Math.min(minLat, points[i][0]);
+        maxLat = Math.max(maxLat, points[i][0]);
+        minLng = Math.min(minLng, points[i][1]);
+        maxLng = Math.max(maxLng, points[i][1]);
+      }
+      const centerLat = (minLat + maxLat) / 2;
+      const centerLng = (minLng + maxLng) / 2;
+      const spanM = Math.max(
+        geodesicDistanceM(centerLat, centerLng, minLat, minLng),
+        geodesicDistanceM(centerLat, centerLng, maxLat, maxLng),
+        maxTargetFocusRadiusM(marker) * 0.35
+      );
+      fitToTarget(centerLat, centerLng, Math.max(spanM * 2.8, 2500));
+    }
+
+    function clearIngressCorridorFlightRoute() {
+      corridorFlightSource.entities.removeAll();
+    }
+
+    function addCorridorFlightPolyline(positions, options) {
+      if (!positions || positions.length < 2) {
+        return;
+      }
+      const use3d = !!options.use3d;
+      corridorFlightSource.entities.add({
+        polyline: {
+          positions: positions,
+          width: options.width || 6,
+          clampToGround: !use3d,
+          material: options.dashed
+            ? new Cesium.PolylineDashMaterialProperty({
+                color: options.color,
+                dashLength: 18,
+              })
+            : new Cesium.PolylineArrowMaterialProperty({
+                color: options.color,
+              }),
+        },
+      });
+    }
+
+    function addEditableFlightRouteWaypoints(item) {
+      if (item.showWaypoints === false) {
+        return;
+      }
+      const editable = item.editableWaypoints || [];
+      const selectedId = item.selectedWaypointId || null;
+      const showLabels = item.showWaypointLabels === true;
+      editable.forEach((waypoint, index) => {
+        const selected = waypoint.id === selectedId;
+        const label = waypoint.label || "WP" + (index + 1);
+        const altM = (waypoint.altitudeFt || 0) * FT_TO_M;
+        const entitySpec = {
+          position: Cesium.Cartesian3.fromDegrees(
+            Number(waypoint.lng),
+            Number(waypoint.lat),
+            Math.max(altM, altM > 0 ? altM : 120)
+          ),
+          point: {
+            pixelSize: selected ? 14 : 12,
+            color: Cesium.Color.fromCssColorString(
+              selected ? "#22d3ee" : "#38bdf8"
+            ),
+            outlineColor: Cesium.Color.fromCssColorString("#0f172a"),
+            outlineWidth: selected ? 3 : 2,
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          },
+        };
+        if (showLabels) {
+          entitySpec.label = {
+            text:
+              label +
+              "\n" +
+              Number(waypoint.lat).toFixed(5) +
+              (waypoint.altitudeFt ? "\n" + waypoint.altitudeFt + " ft" : ""),
+            font: "bold 11px sans-serif",
+            fillColor: Cesium.Color.fromCssColorString(
+              selected ? "#22d3ee" : "#7dd3fc"
+            ),
+            outlineColor: Cesium.Color.fromCssColorString("#0f172a"),
+            outlineWidth: 2,
+            style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+            verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+            pixelOffset: new Cesium.Cartesian2(0, -12),
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          };
+        }
+        const entity = corridorFlightSource.entities.add(entitySpec);
+        entity.maapMeta = {
+          type: "flight_route_waypoint",
+          id: waypoint.id,
+          editable: true,
+        };
+      });
+    }
+
+    function setFlightRouteEditMode(enabled) {
+      flightRouteEditActive = !!enabled;
+      if (!flightRouteEditActive) {
+        routeAddMode = false;
+        routeDragState = null;
+        viewer.scene.screenSpaceCameraController.enableRotate = true;
+        viewer.scene.screenSpaceCameraController.enableTranslate = true;
+      }
+      updateMapCursor();
+    }
+
+    function bearingBetween(lat1, lng1, lat2, lng2) {
+      const phi1 = Cesium.Math.toRadians(lat1);
+      const phi2 = Cesium.Math.toRadians(lat2);
+      const deltaLng = Cesium.Math.toRadians(lng2 - lng1);
+      const y = Math.sin(deltaLng) * Math.cos(phi2);
+      const x =
+        Math.cos(phi1) * Math.sin(phi2) -
+        Math.sin(phi1) * Math.cos(phi2) * Math.cos(deltaLng);
+      return (Cesium.Math.toDegrees(Math.atan2(y, x)) + 360) % 360;
+    }
+
+    function buildWaypointConnectorPositions3d(path3d) {
+      if (!path3d || path3d.length < 2) {
+        return [];
+      }
+      const positions = [];
+      for (let index = 0; index < path3d.length - 1; index += 1) {
+        const start = path3d[index];
+        const end = path3d[index + 1];
+        const spanM = geodesicDistanceM(start[0], start[1], end[0], end[1]);
+        const steps = Math.max(Math.ceil(spanM / 6000), 2);
+        for (let step = 0; step <= steps; step += 1) {
+          const t = step / steps;
+          const point =
+            step === 0
+              ? { lat: start[0], lng: start[1] }
+              : step === steps
+                ? { lat: end[0], lng: end[1] }
+                : destinationFromBearing(
+                    start[0],
+                    start[1],
+                    bearingBetween(start[0], start[1], end[0], end[1]),
+                    spanM * t
+                  );
+          const altM = (start[2] || 0) + ((end[2] || 0) - (start[2] || 0)) * t;
+          positions.push(
+            Cesium.Cartesian3.fromDegrees(point.lng, point.lat, Math.max(altM, 80))
+          );
+        }
+      }
+      return positions;
+    }
+
+    function sortAiWaypoints(waypoints, prefix) {
+      return (waypoints || [])
+        .filter(function (wp) {
+          const id = String(wp.id || "");
+          const label = String(wp.label || "");
+          return id.indexOf(prefix) === 0 || label.indexOf(prefix) === 0;
+        })
+        .sort(function (a, b) {
+          const na = parseInt(String(a.label || a.id).replace(/\D/g, ""), 10) || 0;
+          const nb = parseInt(String(b.label || b.id).replace(/\D/g, ""), 10) || 0;
+          return na - nb;
+        });
+    }
+
+    function buildWaypointConnectorPath3dFromItem(item) {
+      if (item.waypointConnectorPath3d && item.waypointConnectorPath3d.length >= 2) {
+        return item.waypointConnectorPath3d;
+      }
+      const editable = item.editableWaypoints || [];
+      const takeoff = item.takeoff || item.origin;
+      if (!editable.length || !takeoff || takeoff.length < 2) {
+        return [];
+      }
+      const outbound = sortAiWaypoints(editable, "AI-OUT");
+      const rtb = sortAiWaypoints(editable, "AI-RTB");
+      const defaultAlt =
+        Number(item.cruiseAltitudeFt) > 0
+          ? Number(item.cruiseAltitudeFt) * FT_TO_M
+          : Number(item.prefAglM) || 105;
+      const chain = [];
+      chain.push([Number(takeoff[0]), Number(takeoff[1]), defaultAlt]);
+      outbound.forEach(function (wp) {
+        const altM = Number(wp.altitudeFt || 0) * FT_TO_M;
+        chain.push([Number(wp.lat), Number(wp.lng), altM > 0 ? altM : defaultAlt]);
+      });
+      const borderEntry = item.borderEntry;
+      if (borderEntry && borderEntry.length >= 2) {
+        chain.push([Number(borderEntry[0]), Number(borderEntry[1]), defaultAlt]);
+      }
+      const dest = item.destination;
+      if (dest && dest.length >= 2) {
+        chain.push([Number(dest[0]), Number(dest[1]), defaultAlt]);
+      }
+      const borderExit = item.borderExit;
+      if (borderExit && borderExit.length >= 2) {
+        chain.push([Number(borderExit[0]), Number(borderExit[1]), defaultAlt]);
+      }
+      rtb.forEach(function (wp) {
+        const altM = Number(wp.altitudeFt || 0) * FT_TO_M;
+        chain.push([Number(wp.lat), Number(wp.lng), altM > 0 ? altM : defaultAlt]);
+      });
+      chain.push([Number(takeoff[0]), Number(takeoff[1]), defaultAlt]);
+      return chain;
+    }
+
+    function buildWaypointConnectorPath2dFromItem(item) {
+      if (item.waypointConnectorRoute && item.waypointConnectorRoute.length >= 2) {
+        return item.waypointConnectorRoute;
+      }
+      const path3d = buildWaypointConnectorPath3dFromItem(item);
+      return path3d.map(function (point) {
+        return [Number(point[0]), Number(point[1])];
+      });
+    }
+
+    function drawSequentialWaypointLegs(item) {
+      const legs = buildWaypointConnectorPath2dFromItem(item);
+      if (legs.length < 2) {
+        return;
+      }
+      const routeColor = item.routeColor || "#38bdf8";
+      for (let index = 0; index < legs.length - 1; index += 1) {
+        const segment = [legs[index], legs[index + 1]];
+        const positions = buildGeodesicRoutePositions(segment);
+        addCorridorFlightPolyline(positions, {
+          width: 6,
+          color: Cesium.Color.fromCssColorString(routeColor).withAlpha(0.92),
+        });
+      }
+    }
+
+    function addCorridorFlightRoute(item) {
+      if (!item) {
+        return;
+      }
+      setFlightRouteEditMode(!!item.routeEditEnabled);
+      const outboundRoute = item.outboundRoute || [];
+      const returnRoute = item.returnRoute || [];
+      const routeColor = item.routeColor || "#38bdf8";
+      const returnColor = Cesium.Color.fromCssColorString("#22d3ee").withAlpha(0.82);
+      const useUnified = item.unifiedRoute === true;
+      const showReturnRoute = !useUnified && item.showReturnRoute !== false;
+      let outbound3d = item.path3d || [];
+      let return3d = item.returnPath3d || [];
+      if (item.useTerrainAgl && outbound3d.length >= 2) {
+        outbound3d = applyTerrainAglToPath3d(
+          outbound3d,
+          item.prefAglM,
+          item.minAglM,
+          item.maxAglM
+        );
+        if (return3d.length >= 2) {
+          return3d = applyTerrainAglToPath3d(
+            return3d,
+            item.prefAglM,
+            item.minAglM,
+            item.maxAglM
+          );
+        }
+      }
+      const connectorPath3d = buildWaypointConnectorPath3dFromItem(item);
+      const shouldDrawWaypointLegs =
+        item.drawWaypointConnectors !== false &&
+        connectorPath3d.length >= 2 &&
+        (item.routeEditEnabled || useUnified);
+
+      if (useUnified) {
+        if (shouldDrawWaypointLegs) {
+          drawSequentialWaypointLegs(item);
+        } else {
+          let unified3d = item.unifiedPath3d || [];
+          if (!unified3d.length && outbound3d.length >= 2) {
+            unified3d = outbound3d.concat((return3d || []).slice(1));
+          }
+          if (item.useTerrainAgl && unified3d.length >= 2) {
+            unified3d = applyTerrainAglToPath3d(
+              unified3d,
+              item.prefAglM,
+              item.minAglM,
+              item.maxAglM
+            );
+          }
+          if (unified3d.length >= 2) {
+            addCorridorFlightPolyline(buildPath3dPositions(unified3d), {
+              width: 8,
+              color: Cesium.Color.fromCssColorString(routeColor).withAlpha(0.95),
+              use3d: true,
+            });
+          }
+        }
+      } else if (shouldDrawWaypointLegs) {
+        drawSequentialWaypointLegs(item);
+      } else if (outbound3d.length >= 2) {
+        addCorridorFlightPolyline(buildPath3dPositions(outbound3d), {
+          width: 8,
+          color: Cesium.Color.fromCssColorString(routeColor).withAlpha(0.95),
+          use3d: true,
+        });
+      } else if (outboundRoute.length >= 2) {
+        addCorridorFlightPolyline(buildGeodesicRoutePositions(outboundRoute), {
+          width: 8,
+          color: Cesium.Color.fromCssColorString(routeColor).withAlpha(0.95),
+        });
+      }
+      let returnDrawn = false;
+      if (showReturnRoute && return3d.length >= 2) {
+        addCorridorFlightPolyline(buildPath3dPositions(return3d), {
+          width: 6,
+          dashed: true,
+          color: returnColor,
+          use3d: true,
+        });
+        returnDrawn = true;
+      }
+      if (showReturnRoute && !returnDrawn && returnRoute.length >= 2) {
+        addCorridorFlightPolyline(buildGeodesicRoutePositions(returnRoute), {
+          width: 6,
+          dashed: true,
+          color: returnColor,
+        });
+      }
+      const markers = item.routeMarkers || [];
+      const sketchMode = item.routeStyle === "waypoint_polyline";
+      const routeEditMode = !!item.routeEditEnabled;
+      markers.forEach((marker) => {
+        if (
+          (sketchMode || routeEditMode) &&
+          marker.pointType !== "takeoff" &&
+          marker.pointType !== "target"
+        ) {
+          return;
+        }
+        const colors = {
+          takeoff: "#4ade80",
+          target: "#f87171",
+          ingress: "#fbbf24",
+          return: "#fbbf24",
+        };
+        const color = colors[marker.pointType] || "#f59e0b";
+        corridorFlightSource.entities.add({
+          position: Cesium.Cartesian3.fromDegrees(marker.lng, marker.lat, 180),
+          point: {
+            pixelSize: 10,
+            color: Cesium.Color.fromCssColorString(color),
+            outlineColor: Cesium.Color.fromCssColorString("#0f172a"),
+            outlineWidth: 2,
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          },
+          label: {
+            text:
+              (marker.routeCode || marker.label || "WP") +
+              (marker.label && marker.routeCode ? "\n" + marker.label : ""),
+            font: "bold 11px sans-serif",
+            fillColor: Cesium.Color.fromCssColorString(color),
+            outlineColor: Cesium.Color.fromCssColorString("#0f172a"),
+            outlineWidth: 2,
+            style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+            verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+            pixelOffset: new Cesium.Cartesian2(0, -10),
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          },
+        });
+      });
+      addEditableFlightRouteWaypoints(item);
+      if (item.drawWaypointConnectors && (item.waypointConnectorPath3d || []).length >= 2) {
+        const takeoff = item.takeoff || item.origin;
+        if (takeoff && takeoff.length >= 2) {
+          corridorFlightSource.entities.add({
+            position: Cesium.Cartesian3.fromDegrees(takeoff[1], takeoff[0], 180),
+            point: {
+              pixelSize: 12,
+              color: Cesium.Color.fromCssColorString("#4ade80"),
+              outlineColor: Cesium.Color.fromCssColorString("#0f172a"),
+              outlineWidth: 2,
+              disableDepthTestDistance: Number.POSITIVE_INFINITY,
+            },
+            label: {
+              text: "TO\nกองบิน",
+              font: "bold 11px sans-serif",
+              fillColor: Cesium.Color.fromCssColorString("#4ade80"),
+              outlineColor: Cesium.Color.fromCssColorString("#0f172a"),
+              outlineWidth: 2,
+              style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+              verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+              pixelOffset: new Cesium.Cartesian2(0, -10),
+              disableDepthTestDistance: Number.POSITIVE_INFINITY,
+            },
+          });
+        }
+      }
+    }
+
+    function fitToCorridorFlightRoute(item) {
+      if (!item) {
+        return;
+      }
+      const points = []
+        .concat(item.outboundRoute || [])
+        .concat((item.returnRoute || []).slice(1));
+      if (!points.length) {
+        return;
+      }
+      let minLat = points[0][0];
+      let maxLat = points[0][0];
+      let minLng = points[0][1];
+      let maxLng = points[0][1];
+      for (let i = 1; i < points.length; i += 1) {
+        minLat = Math.min(minLat, points[i][0]);
+        maxLat = Math.max(maxLat, points[i][0]);
+        minLng = Math.min(minLng, points[i][1]);
+        maxLng = Math.max(maxLng, points[i][1]);
+      }
+      const centerLat = (minLat + maxLat) / 2;
+      const centerLng = (minLng + maxLng) / 2;
+      const spanM = Math.max(
+        geodesicDistanceM(centerLat, centerLng, minLat, minLng),
+        geodesicDistanceM(centerLat, centerLng, maxLat, maxLng)
+      );
+      fitToTarget(centerLat, centerLng, Math.max(spanM * 2.6, 8000));
+    }
+
+    function updateCorridorFlightRoute(item) {
+      if (!ingressCorridorFocus) {
+        return;
+      }
+      clearIngressCorridorFlightRoute();
+      if (item) {
+        addCorridorFlightRoute(item);
+      }
+    }
+
+    function highlightIngressCorridor(targetCardId, coordinateId, rank, flightRoute) {
+      selectedTargetId = targetCardId;
+      clearIngressCorridorFlightRoute();
+      if (!rank) {
+        ingressCorridorFocus = null;
+        setFlightRouteEditMode(false);
+        drawRiskDirectionForTarget(targetCardId);
+        fitToTargetCard(targetCardId);
+        return;
+      }
+      ingressCorridorFocus = {
+        targetCardId: targetCardId,
+        coordinateId: coordinateId || null,
+        rank: rank,
+      };
+      drawRiskDirectionForTarget(targetCardId);
+      if (flightRoute) {
+        addCorridorFlightRoute(flightRoute);
+        if (flightRoute.fitToRoute !== false) {
+          fitToCorridorFlightRoute(flightRoute);
+        }
+      } else {
+        fitToIngressCorridor(targetCardId, coordinateId, rank);
+      }
+    }
+
+    function fitToScenario() {
+      flyToDegrees(DEFAULT_LNG, DEFAULT_LAT, DEFAULT_HEIGHT, 1.0);
+    }
+
+    function addAssetMarker(source, item, color, fallbackType) {
+      const entityType = item.entityType || fallbackType;
+      const entity = source.entities.add({
+        position: Cesium.Cartesian3.fromDegrees(item.lng, item.lat),
+        point: pointStyle(color, 10),
+        label: labelStyle(item.label || entityType, color),
+      });
+      entity.maapMeta = {
+        type: "entity",
+        entityType,
+        entityId: item.entityId || item.routeId,
+      };
+    }
+
+    function addWingMarker(source, item) {
+      const entityType = item.entityType || "air_wing";
+      const entity = source.entities.add({
+        position: Cesium.Cartesian3.fromDegrees(item.lng, item.lat),
+        billboard: {
+          image: wingIconUrl,
+          width: WING_ICON_SIZE,
+          height: WING_ICON_SIZE,
+          color: Cesium.Color.WHITE,
+          verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+          heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          scaleByDistance: new Cesium.NearFarScalar(800, 1.0, 1200000, 0.35),
+        },
+        label: {
+          text: item.label || "กองบิน",
+          font: "bold 24px sans-serif",
+          fillColor: Cesium.Color.fromCssColorString("#93C5FD"),
+          outlineColor: Cesium.Color.fromCssColorString("#0f172a"),
+          outlineWidth: 3,
+          style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+          verticalOrigin: Cesium.VerticalOrigin.TOP,
+          pixelOffset: new Cesium.Cartesian2(0, 8),
+          heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          scaleByDistance: new Cesium.NearFarScalar(800, 1.0, 1200000, 0.35),
+        },
+      });
+      entity.maapMeta = {
+        type: "entity",
+        entityType,
+        entityId: item.entityId,
+      };
+    }
+
+    const DEPLOYMENT_ARC_SEGMENTS = 72;
+    const DEPLOYMENT_ARC_MIN_PEAK_M = 1500;
+    const DEPLOYMENT_ARC_MAX_PEAK_M = 18000;
+    const DEPLOYMENT_ARC_PEAK_RATIO = 0.12;
+
+    function deploymentArcPeakHeightM(surfaceDistanceM) {
+      const scaled = surfaceDistanceM * DEPLOYMENT_ARC_PEAK_RATIO;
+      return Math.min(
+        DEPLOYMENT_ARC_MAX_PEAK_M,
+        Math.max(DEPLOYMENT_ARC_MIN_PEAK_M, scaled)
+      );
+    }
+
+    function buildDeploymentArcPositions(
+      originLat,
+      originLng,
+      destLat,
+      destLng,
+      peakHeightM
+    ) {
+      const start = Cesium.Cartographic.fromDegrees(originLng, originLat);
+      const end = Cesium.Cartographic.fromDegrees(destLng, destLat);
+      const geodesic = new Cesium.EllipsoidGeodesic(start, end);
+      const peak = peakHeightM || deploymentArcPeakHeightM(geodesic.surfaceDistance);
+      const positions = [];
+      for (let i = 0; i <= DEPLOYMENT_ARC_SEGMENTS; i++) {
+        const fraction = i / DEPLOYMENT_ARC_SEGMENTS;
+        const point = geodesic.interpolateUsingFraction(fraction);
+        const height = 4 * peak * fraction * (1 - fraction);
+        positions.push(
+          Cesium.Cartesian3.fromRadians(point.longitude, point.latitude, height)
+        );
+      }
+      return positions;
+    }
+
+    function buildPath3dPositions(path3d) {
+      if (!path3d || path3d.length < 2) {
+        return [];
+      }
+      return path3d.map((point) =>
+        Cesium.Cartesian3.fromDegrees(point[1], point[0], point[2] || 0)
+      );
+    }
+
+    function buildFlightPathPositions(pathPoints, peakHeightM) {
+      if (!pathPoints || pathPoints.length < 2) {
+        return [];
+      }
+      const positions = [];
+      for (let segment = 0; segment < pathPoints.length - 1; segment += 1) {
+        const start = pathPoints[segment];
+        const end = pathPoints[segment + 1];
+        const arcPositions = buildDeploymentArcPositions(
+          start[0],
+          start[1],
+          end[0],
+          end[1],
+          peakHeightM
+        );
+        const startIndex = segment === 0 ? 0 : 1;
+        for (let i = startIndex; i < arcPositions.length; i += 1) {
+          positions.push(arcPositions[i]);
+        }
+      }
+      return positions;
+    }
+
+    function destinationPoint(lat, lng, bearingDeg, distanceM) {
+      if (distanceM <= 0) {
+        return [lat, lng];
+      }
+      const bearing = ((bearingDeg % 360) + 360) % 360;
+      const bearingRad = Cesium.Math.toRadians(bearing);
+      const latRad = Cesium.Math.toRadians(lat);
+      const lngRad = Cesium.Math.toRadians(lng);
+      const angular = distanceM / 6371000.0;
+      const destLat = Math.asin(
+        Math.sin(latRad) * Math.cos(angular) +
+          Math.cos(latRad) * Math.sin(angular) * Math.cos(bearingRad)
+      );
+      const destLng =
+        lngRad +
+        Math.atan2(
+          Math.sin(bearingRad) * Math.sin(angular) * Math.cos(latRad),
+          Math.cos(angular) - Math.sin(latRad) * Math.sin(destLat)
+        );
+      return [Cesium.Math.toDegrees(destLat), Cesium.Math.toDegrees(destLng)];
+    }
+
+    function buildGeodesicRoutePositions(pathPoints) {
+      if (!pathPoints || pathPoints.length < 2) {
+        return [];
+      }
+      const positions = [];
+      const segmentsPerLeg = 48;
+      for (let leg = 0; leg < pathPoints.length - 1; leg += 1) {
+        const startPoint = pathPoints[leg];
+        const endPoint = pathPoints[leg + 1];
+        const start = Cesium.Cartographic.fromDegrees(startPoint[1], startPoint[0]);
+        const end = Cesium.Cartographic.fromDegrees(endPoint[1], endPoint[0]);
+        const geodesic = new Cesium.EllipsoidGeodesic(start, end);
+        for (let i = 0; i <= segmentsPerLeg; i += 1) {
+          if (leg > 0 && i === 0) {
+            continue;
+          }
+          const sample = geodesic.interpolateUsingFraction(i / segmentsPerLeg);
+          positions.push(
+            Cesium.Cartesian3.fromRadians(sample.longitude, sample.latitude, 0)
+          );
+        }
+      }
+      return positions;
+    }
+
+    function addFlightRoutePolyline(positions, options) {
+      if (!positions || positions.length < 2) {
+        return;
+      }
+      deploymentSource.entities.add({
+        polyline: {
+          positions,
+          width: options.width || 6,
+          clampToGround: true,
+          material: options.dashed
+            ? new Cesium.PolylineDashMaterialProperty({
+                color: options.color,
+                dashLength: 18,
+              })
+            : new Cesium.PolylineArrowMaterialProperty({
+                color: options.color,
+              }),
+        },
+      });
+    }
+
+    function addRouteWaypointMarker(marker) {
+      const colors = {
+        takeoff: "#4ade80",
+        target: "#f87171",
+        ingress: "#fbbf24",
+        fly_through: "#38bdf8",
+        return: "#a78bfa",
+      };
+      const color = colors[marker.pointType] || "#7dd3fc";
+      const code = marker.routeCode || marker.label || "WP";
+      const altM = (marker.altitudeFt || 0) * 0.3048;
+      deploymentSource.entities.add({
+        position: Cesium.Cartesian3.fromDegrees(
+          marker.lng,
+          marker.lat,
+          Math.max(altM, 120)
+        ),
+        point: {
+          pixelSize: 11,
+          color: Cesium.Color.fromCssColorString(color),
+          outlineColor: Cesium.Color.fromCssColorString("#0f172a"),
+          outlineWidth: 2,
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
+        label: {
+          text:
+            code +
+            (marker.altitudeFt ? `\n${marker.altitudeFt} ft` : "") +
+            (marker.label && marker.label !== code ? `\n${marker.label}` : ""),
+          font: "bold 16px sans-serif",
+          fillColor: Cesium.Color.fromCssColorString(color),
+          outlineColor: Cesium.Color.fromCssColorString("#0f172a"),
+          outlineWidth: 2,
+          style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+          verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+          pixelOffset: new Cesium.Cartesian2(0, -14),
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
+      });
+    }
+
+    function addDeploymentLink(item) {
+      const origin = item.origin || [];
+      const destination = item.destination || [];
+      if (origin.length < 2 || destination.length < 2) {
+        return;
+      }
+      const outboundRoute =
+        item.outboundRoute && item.outboundRoute.length >= 2
+          ? item.outboundRoute
+          : item.path && item.path.length >= 2
+            ? item.path
+            : [origin, destination];
+      const outboundTrack = buildGeodesicRoutePositions(outboundRoute);
+      addFlightRoutePolyline(outboundTrack, {
+        width: 7,
+        color: Cesium.Color.fromCssColorString("#38bdf8").withAlpha(0.95),
+      });
+
+      if (item.returnRoute && item.returnRoute.length >= 2) {
+        const returnTrack = buildGeodesicRoutePositions(item.returnRoute);
+        addFlightRoutePolyline(returnTrack, {
+          width: 6,
+          dashed: true,
+          color: Cesium.Color.fromCssColorString("#a78bfa").withAlpha(0.92),
+        });
+      }
+
+      if (item.path3d && item.path3d.length >= 2) {
+        deploymentSource.entities.add({
+          polyline: {
+            positions: buildPath3dPositions(item.path3d),
+            width: 2,
+            material: Cesium.Color.fromCssColorString("#7dd3fc").withAlpha(0.45),
+            arcType: Cesium.ArcType.NONE,
+          },
+        });
+      }
+      if (item.returnPath3d && item.returnPath3d.length >= 2) {
+        deploymentSource.entities.add({
+          polyline: {
+            positions: buildPath3dPositions(item.returnPath3d),
+            width: 2,
+            material: Cesium.Color.fromCssColorString("#c4b5fd").withAlpha(0.4),
+            arcType: Cesium.ArcType.NONE,
+          },
+        });
+      }
+
+      const markers =
+        item.routeMarkers && item.routeMarkers.length
+          ? item.routeMarkers
+          : item.waypoints || [];
+      markers.forEach((marker) => addRouteWaypointMarker(marker));
+
+      const entity = deploymentSource.entities.add({
+        polyline: {
+          positions: outboundTrack,
+          width: 0,
+          material: Cesium.Color.TRANSPARENT,
+        },
+      });
+      entity.maapMeta = {
+        type: "deployment",
+        targetId: item.targetCardId,
+        wingId: item.wingId,
+        linkId: item.linkId,
+      };
+    }
+
+    function setAssetLayers(data) {
+      orgSource.entities.removeAll();
+      depotSource.entities.removeAll();
+      routeSource.entities.removeAll();
+      deploymentSource.entities.removeAll();
+      (data.organizations || []).forEach((item) => {
+        if (item.entityType === "air_wing") {
+          addWingMarker(orgSource, item);
+        } else {
+          addAssetMarker(orgSource, item, "#60a5fa", "organization");
+        }
+      });
+      (data.depots || []).forEach((item) => {
+        addAssetMarker(depotSource, item, "#4ade80", "depot");
+      });
+      (data.routes || []).forEach((item) => {
+        const origin = item.origin || [];
+        const destination = item.destination || [];
+        if (origin.length < 2 || destination.length < 2) {
+          return;
+        }
+        const entity = routeSource.entities.add({
+          polyline: {
+            positions: Cesium.Cartesian3.fromDegreesArray([
+              origin[1],
+              origin[0],
+              destination[1],
+              destination[0],
+            ]),
+            width: 3,
+            material: new Cesium.PolylineDashMaterialProperty({
+              color: Cesium.Color.fromCssColorString("#d6b35a"),
+              dashLength: 12,
+            }),
+            clampToGround: true,
+          },
+        });
+        entity.maapMeta = {
+          type: "entity",
+          entityType: "route",
+          entityId: item.routeId,
+        };
+      });
+      applyLayerVisibility();
+    }
+
+    function detectionColor(risk) {
+      if (risk === "high") {
+        return "#ef4444";
+      }
+      if (risk === "medium") {
+        return "#f59e0b";
+      }
+      return "#22c55e";
+    }
+
+    function setDetectedObjects(items) {
+      detectionSource.entities.removeAll();
+      Object.keys(detectionEntities).forEach((key) => {
+        delete detectionEntities[key];
+      });
+      (items || []).forEach((item) => {
+        const polygon = item.polygon || [];
+        if (polygon.length < 3) {
+          return;
+        }
+        const flatDegrees = [];
+        polygon.forEach((coord) => {
+          flatDegrees.push(coord[1], coord[0]);
+        });
+        const color = detectionColor(item.risk);
+        const entity = detectionSource.entities.add({
+          polygon: {
+            hierarchy: Cesium.Cartesian3.fromDegreesArray(flatDegrees),
+            material: Cesium.Color.fromCssColorString(color).withAlpha(0.22),
+            outline: true,
+            outlineColor: Cesium.Color.fromCssColorString(color).withAlpha(0.95),
+            outlineWidth: 3,
+            height: 0,
+            heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+            classificationType: Cesium.ClassificationType.BOTH,
+          },
+          label: {
+            text: `${item.label || item.objectType || "Object"} · ${item.risk || "low"}`,
+            font: "bold 12px sans-serif",
+            fillColor: Cesium.Color.fromCssColorString(color),
+            outlineColor: Cesium.Color.fromCssColorString("#020617"),
+            outlineWidth: 3,
+            style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+            verticalOrigin: Cesium.VerticalOrigin.CENTER,
+            heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          },
+          position: Cesium.Cartesian3.fromDegrees(item.lng, item.lat),
+        });
+        entity.maapMeta = {
+          type: "entity",
+          entityType: "risk_object",
+          entityId: item.id,
+        };
+        entity.maapDetectionItem = item;
+        detectionEntities[item.id] = entity;
+      });
+      refreshDetectionHighlights();
+      applyLayerVisibility();
+    }
+
+    function teamSideColor(side) {
+      return side === "red" ? "#ef4444" : "#3b82f6";
+    }
+
+    function teamSideLabel(side) {
+      return side === "red" ? "RED" : "BLUE";
+    }
+
+    const TEAM_UNIT_LABELS = {
+      generic: "",
+      radar: "เรดาร์",
+      tank: "รถถัง",
+      small_arms: "ปืนเล็ก",
+      artillery: "ปืนใหญ่",
+      anti_air: "ปืนต่อสู้อากาศยาน",
+    };
+
+    const TEAM_UNIT_POINT_SIZE = {
+      generic: 12,
+      radar: 14,
+      tank: 13,
+      small_arms: 11,
+      artillery: 13,
+      anti_air: 14,
+    };
+
+    function teamUnitLabel(unitType) {
+      const key = String(unitType || "generic").toLowerCase();
+      return TEAM_UNIT_LABELS[key] || "";
+    }
+
+    function teamMarkerDisplayText(side, unitType, name, radiusM) {
+      const lines = [teamSideLabel(side)];
+      const unitText = teamUnitLabel(unitType);
+      if (unitText) {
+        lines.push(unitText);
+      }
+      if (unitType === "radar" && Number(radiusM) > 0) {
+        lines.push(formatRadiusM(radiusM));
+      }
+      lines.push(String(name || teamSideLabel(side)));
+      return lines.join("\n");
+    }
+
+    function formatRadiusM(radiusM) {
+      const value = Number(radiusM);
+      if (!Number.isFinite(value) || value <= 0) {
+        return "";
+      }
+      if (value >= 1000) {
+        const km = value / 1000;
+        return `R ${km >= 10 ? km.toFixed(0) : km.toFixed(1)} km`;
+      }
+      return `R ${value.toFixed(0)} m`;
+    }
+
+    let pendingTeamPlacement = null;
+    let selectedTeamSide = "blue";
+    const teamContextMenu = document.getElementById("teamContextMenu");
+
+    function setTeamContextSide(side) {
+      selectedTeamSide = side === "red" ? "red" : "blue";
+      teamContextMenu.classList.toggle("side-blue", selectedTeamSide === "blue");
+      teamContextMenu.classList.toggle("side-red", selectedTeamSide === "red");
+      teamContextMenu.querySelectorAll(".side-tab").forEach((tab) => {
+        const tabSide = tab.getAttribute("data-side") || "blue";
+        tab.classList.toggle("active", tabSide === selectedTeamSide);
+      });
+    }
+
+    function hideTeamContextMenu() {
+      teamContextMenu.style.display = "none";
+      pendingTeamPlacement = null;
+    }
+
+    function showTeamContextMenu(screenPosition) {
+      const point = pickLatLngFromClick({ position: screenPosition });
+      if (!point) {
+        return;
+      }
+      pendingTeamPlacement = { lat: point[0], lng: point[1] };
+      setTeamContextSide("blue");
+      const maxX = Math.max(viewer.canvas.clientWidth - 230, 8);
+      const maxY = Math.max(viewer.canvas.clientHeight - 320, 8);
+      teamContextMenu.style.left = Math.min(screenPosition.x, maxX) + "px";
+      teamContextMenu.style.top = Math.min(screenPosition.y, maxY) + "px";
+      teamContextMenu.style.display = "block";
+    }
+
+    teamContextMenu.querySelectorAll(".side-tab").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        event.stopPropagation();
+        setTeamContextSide(button.getAttribute("data-side") || "blue");
+      });
+    });
+
+    const targetCreateBtn = document.getElementById("targetCreateBtn");
+    if (targetCreateBtn) {
+      targetCreateBtn.addEventListener("click", (event) => {
+        event.stopPropagation();
+        if (!pendingTeamPlacement) {
+          hideTeamContextMenu();
+          return;
+        }
+        syncMapEvent("target_create_at", [
+          pendingTeamPlacement.lat,
+          pendingTeamPlacement.lng,
+        ]);
+        hideTeamContextMenu();
+      });
+    }
+
+    teamContextMenu.querySelectorAll("button.unit-option").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        event.stopPropagation();
+        if (!pendingTeamPlacement) {
+          hideTeamContextMenu();
+          return;
+        }
+        const unitType = button.getAttribute("data-unit") || "generic";
+        syncMapEvent("team_marker_place", [
+          selectedTeamSide,
+          unitType,
+          pendingTeamPlacement.lat,
+          pendingTeamPlacement.lng,
+        ]);
+        hideTeamContextMenu();
+      });
+    });
+
+    document.addEventListener("click", () => hideTeamContextMenu());
+
+    function setTeamMarkers(items) {
+      teamSource.entities.removeAll();
+      (items || []).forEach((item) => {
+        const side = String(item.side || "blue").toLowerCase();
+        const unitType = String(item.unitType || item.unit_type || "generic").toLowerCase();
+        const color = teamSideColor(side);
+        const label = String(item.label || teamSideLabel(side));
+        const lat = Number(item.lat);
+        const lng = Number(item.lng);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+          return;
+        }
+        const pointSize = TEAM_UNIT_POINT_SIZE[unitType] || 12;
+        const radiusM = Number(item.radiusM ?? item.radius_m ?? 0);
+        if (unitType === "radar" && radiusM > 0) {
+          addCircleEntity(teamSource, lng, lat, radiusM, color, 0.14, false, 2);
+          addDashedOutlineCircle(teamSource, lng, lat, radiusM, color, 2.5);
+        }
+        const entity = teamSource.entities.add({
+          position: Cesium.Cartesian3.fromDegrees(lng, lat),
+          point: {
+            pixelSize: pointSize,
+            color: Cesium.Color.fromCssColorString(color),
+            outlineColor: Cesium.Color.fromCssColorString("#0f172a"),
+            outlineWidth: 2,
+            heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          },
+          label: {
+            text: teamMarkerDisplayText(side, unitType, label, radiusM),
+            font: "bold 12px sans-serif",
+            fillColor: Cesium.Color.fromCssColorString(color),
+            outlineColor: Cesium.Color.fromCssColorString("#0f172a"),
+            outlineWidth: 3,
+            style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+            verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+            pixelOffset: new Cesium.Cartesian2(0, -14),
+            heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          },
+        });
+        entity.maapMeta = {
+          type: "entity",
+          entityType: "team_marker",
+          entityId: String(item.id || ""),
+        };
+      });
+      applyLayerVisibility();
+    }
+
+    function formatTransportDistanceM(distanceM) {
+      const value = Number(distanceM) || 0;
+      if (value >= 1000) {
+        return (value / 1000).toFixed(1) + " km";
+      }
+      return value.toFixed(0) + " m";
+    }
+
+    function formatTransportDurationMin(durationMin) {
+      const total = Math.max(Math.round(Number(durationMin) || 0), 0);
+      if (total < 60) {
+        return total + " นาที";
+      }
+      const hours = Math.floor(total / 60);
+      const minutes = total % 60;
+      if (minutes === 0) {
+        return hours + " ชม.";
+      }
+      return hours + " ชม. " + minutes + " นาที";
+    }
+
+    function buildGroundTransportPositions(path, oLat, oLng, dLat, dLng) {
+      if (Array.isArray(path) && path.length >= 2) {
+        const points = [];
+        path.forEach((point) => {
+          const lat = Number(point[0]);
+          const lng = Number(point[1]);
+          if (Number.isFinite(lat) && Number.isFinite(lng)) {
+            points.push([lat, lng]);
+          }
+        });
+        if (points.length >= 2) {
+          if (points.length > 2) {
+            const coords = [];
+            points.forEach(([lat, lng]) => coords.push(lng, lat));
+            return Cesium.Cartesian3.fromDegreesArray(coords);
+          }
+          return buildGeodesicPolylinePositions(points);
+        }
+      }
+      return buildGeodesicPolylinePositions([
+        [oLat, oLng],
+        [dLat, dLng],
+      ]);
+    }
+
+    function addGoogleDrivingRoute(positions, color, width, isRoad) {
+      if (!positions || positions.length < 2) {
+        return null;
+      }
+      const routeColor = Cesium.Color.fromCssColorString(color).withAlpha(0.98);
+      if (isRoad) {
+        groundTransportSource.entities.add({
+          polyline: {
+            positions: positions,
+            width: width + 2,
+            material: Cesium.Color.WHITE.withAlpha(0.85),
+            clampToGround: true,
+          },
+        });
+      }
+      return groundTransportSource.entities.add({
+        polyline: {
+          positions: positions,
+          width: width,
+          material: isRoad
+            ? new Cesium.PolylineArrowMaterialProperty({
+                color: routeColor,
+              })
+            : new Cesium.PolylineDashMaterialProperty({
+                color: routeColor,
+                dashLength: 16,
+              }),
+          clampToGround: true,
+        },
+      });
+    }
+
+    function addGroundTransportEndpoint(lat, lng, label, color) {
+      groundTransportSource.entities.add({
+        position: Cesium.Cartesian3.fromDegrees(lng, lat, 120),
+        point: {
+          pixelSize: 10,
+          color: Cesium.Color.fromCssColorString(color),
+          outlineColor: Cesium.Color.WHITE,
+          outlineWidth: 1.5,
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
+        label: {
+          text: label,
+          font: "bold 11px sans-serif",
+          fillColor: Cesium.Color.WHITE,
+          outlineColor: Cesium.Color.fromCssColorString("#0f172a"),
+          outlineWidth: 2,
+          style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+          verticalOrigin: Cesium.VerticalOrigin.CENTER,
+          horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
+          pixelOffset: new Cesium.Cartesian2(0, 0),
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
+      });
+    }
+
+    function setGroundTransportRoutes(items) {
+      groundTransportSource.entities.removeAll();
+      (items || []).forEach((item) => {
+        const origin = item.origin || [];
+        const destination = item.destination || [];
+        if (origin.length < 2 || destination.length < 2) {
+          return;
+        }
+        const selected = !!item.selected;
+        const isRoad = String(item.routeMode || "").toLowerCase() === "road";
+        const color = selected ? "#facc15" : isRoad ? "#fbbf24" : "#eab308";
+        const width = selected ? 5 : isRoad ? 4 : 3;
+        const oLat = Number(origin[0]);
+        const oLng = Number(origin[1]);
+        const dLat = Number(destination[0]);
+        const dLng = Number(destination[1]);
+        if (
+          !Number.isFinite(oLat) ||
+          !Number.isFinite(oLng) ||
+          !Number.isFinite(dLat) ||
+          !Number.isFinite(dLng)
+        ) {
+          return;
+        }
+        const path = item.path || [];
+        const positions = buildGroundTransportPositions(path, oLat, oLng, dLat, dLng);
+        const line = addGoogleDrivingRoute(positions, color, width, isRoad);
+        if (line) {
+          line.maapMeta = {
+            type: "entity",
+            entityType: "ground_transport",
+            entityId: String(item.id || ""),
+          };
+        }
+
+        const midIndex =
+          Array.isArray(path) && path.length >= 2
+            ? Math.floor(path.length / 2)
+            : -1;
+        const midLat =
+          midIndex >= 0 ? Number(path[midIndex][0]) : (oLat + dLat) / 2;
+        const midLng =
+          midIndex >= 0 ? Number(path[midIndex][1]) : (oLng + dLng) / 2;
+        const distanceText = formatTransportDistanceM(item.distanceM);
+        const durationText = formatTransportDurationMin(item.durationMin);
+        const routeModeText = item.routeModeLabel || "";
+        const labelText =
+          String(item.label || "ขนส่งทางบก") +
+          (routeModeText ? "\n" + routeModeText : "") +
+          "\n" +
+          distanceText +
+          " · " +
+          durationText;
+
+        groundTransportSource.entities.add({
+          position: Cesium.Cartesian3.fromDegrees(midLng, midLat, 120),
+          label: {
+            text: labelText,
+            font: "bold 11px sans-serif",
+            fillColor: Cesium.Color.fromCssColorString(color),
+            outlineColor: Cesium.Color.fromCssColorString("#0f172a"),
+            outlineWidth: 3,
+            style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+            verticalOrigin: Cesium.VerticalOrigin.CENTER,
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+            showBackground: true,
+            backgroundColor: Cesium.Color.fromCssColorString("#0f172a").withAlpha(0.72),
+            backgroundPadding: new Cesium.Cartesian2(8, 5),
+          },
+        });
+
+        addGroundTransportEndpoint(oLat, oLng, "A", "#22c55e");
+        addGroundTransportEndpoint(dLat, dLng, "B", "#ef4444");
+      });
+      applyLayerVisibility();
+    }
+
+    function setLayerVisibility(layers) {
+      Object.assign(layerVisibility, layers || {});
+      applyLayerVisibility();
+    }
+
+    function setDetectionCaptureMode(enabled) {
+      detectionCaptureMode = !!enabled;
+      if (detectionCaptureMode) {
+        targetSource.show = false;
+        effectDomePrimitives.show = false;
+        referenceSource.show = false;
+        orgSource.show = false;
+        depotSource.show = false;
+        routeSource.show = false;
+        groundTransportSource.show = false;
+        deploymentSource.show = false;
+        detectionSource.show = false;
+        teamSource.show = false;
+        borderSource.show = false;
+        riskDirectionSource.show = false;
+        return;
+      }
+      restoreMapLayersAfterDetection();
+    }
+
+    function restoreMapLayersAfterDetection() {
+      detectionCaptureMode = false;
+      applyLayerVisibility();
+      if (selectedTargetId) {
+        highlightTarget(selectedTargetId);
+      }
+    }
+
+    function applyLayerVisibility() {
+      if (detectionCaptureMode) {
+        return;
+      }
+      targetSource.show = true;
+      effectDomePrimitives.show = !!layerVisibility.effect_domes;
+      referenceSource.show = false;
+      orgSource.show = !!layerVisibility.organizations;
+      depotSource.show = !!layerVisibility.depots;
+      routeSource.show = !!layerVisibility.routes;
+      groundTransportSource.show = !!layerVisibility.ground_transport;
+      deploymentSource.show = false;
+      detectionSource.show = !!layerVisibility.detections;
+      teamSource.show = !!layerVisibility.teams;
+      borderSource.show = !!layerVisibility.borders;
+      riskDirectionSource.show = !detectionCaptureMode;
+    }
+
+    function panAndMark(lat, lng) {
+      flyToDegrees(lng, lat, 2800, 1.5);
+      setTimeout(() => createMarkerAt(lat, lng), 1500);
+    }
+
+    function panAndMarkReference(
+      lat,
+      lng,
+      source,
+      coordinateError,
+      analysisBoundary,
+      referenceRisk,
+      observationRange,
+      reviewArea,
+      effectSummary,
+      effectRadii,
+      confidence,
+      timestamp
+    ) {
+      setMapLayerSpec(
+        source,
+        coordinateError,
+        analysisBoundary,
+        referenceRisk,
+        observationRange,
+        reviewArea,
+        effectSummary,
+        effectRadii,
+        confidence,
+        timestamp
+      );
+      clearAllMarkers();
+      flyToDegrees(lng, lat, 2800, 1.5);
+      setTimeout(() => createMarkerAt(lat, lng), 1500);
+    }
+
+    function emitLinkMapPick(click) {
+      const point = pickLatLngFromClick(click);
+      if (!point) {
+        return;
+      }
+      setLinkMode(false);
+      syncMapEvent("link_map", [point[0], point[1]]);
+    }
+
+    let maapBridge = null;
+    if (typeof qt !== "undefined" && qt.webChannelTransport) {
+      new QWebChannel(qt.webChannelTransport, function(channel) {
+        maapBridge = channel.objects.bridge;
+      });
+    }
+
+    function syncMapEvent(name, values) {
+      const args = (values || []).map((value) => String(value));
+      if (maapBridge) {
+        if (name === "link_map" && args.length >= 2) {
+          maapBridge.linkMapClick(Number(args[0]), Number(args[1]));
+        } else if (name === "pick_coord" && args.length >= 2) {
+          maapBridge.pickCoord(Number(args[0]), Number(args[1]));
+        } else if (name === "flight_route_add" && args.length >= 2) {
+          maapBridge.flightRouteAdd(Number(args[0]), Number(args[1]));
+        } else if (name === "flight_route_move" && args.length >= 3) {
+          maapBridge.flightRouteMove(args[0], Number(args[1]), Number(args[2]));
+        } else if (name === "flight_route_select" && args.length >= 1) {
+          maapBridge.flightRouteSelect(args[0]);
+        } else if (name === "detection_add" && args.length >= 2) {
+          maapBridge.detectionAdd(Number(args[0]), Number(args[1]));
+        } else if (name === "detection_select" && args.length >= 1) {
+          maapBridge.detectionSelect(args[0]);
+        } else if (name === "team_marker_place" && args.length >= 4) {
+          maapBridge.teamMarkerPlace(
+            args[0],
+            args[1],
+            Number(args[2]),
+            Number(args[3]),
+          );
+        } else if (name === "team_marker_place" && args.length >= 3) {
+          maapBridge.teamMarkerPlace(
+            args[0],
+            "generic",
+            Number(args[1]),
+            Number(args[2]),
+          );
+        } else if (name === "target_create_at" && args.length >= 2) {
+          maapBridge.targetCreateAt(Number(args[0]), Number(args[1]));
+        } else if (name === "select_target" && args.length >= 1) {
+          maapBridge.selectTarget(args[0]);
+        } else if (name === "select_entity" && args.length >= 2) {
+          maapBridge.selectEntity(args[0], args[1]);
+        } else if (name === "route_point_pick" && args.length >= 3) {
+          maapBridge.routePointPick(args[0], Number(args[1]), Number(args[2]));
+        } else if (name === "detection_ready") {
+          maapBridge.detectionReady();
+        } else if (name === "measure_update" && args.length >= 1) {
+          maapBridge.measureUpdate(Number(args[0]), Number(args[1] || 0));
+        }
+        return;
+      }
+      document.title = "MAAP_SYNC|" + name + (args.length ? "|" + args.join("|") : "");
+      // Web parent (Vue iframe) listens via postMessage — same events as desktop title sync.
+      try {
+        if (window.parent && window.parent !== window) {
+          window.parent.postMessage(
+            { source: "maap-map", type: "map-event", name: name, args: args },
+            "*"
+          );
+        }
+      } catch (err) {
+        /* ignore */
+      }
+    }
+
+    function pickEntityThroughDomes(position) {
+      const hits = viewer.scene.drillPick(position, 10);
+      if (!hits.length) {
+        return undefined;
+      }
+      const isDome = (hit) => hit && hit.id && hit.id.maapMeta && hit.id.maapMeta.part === "dome";
+      return hits.find((hit) => !isDome(hit)) || hits[0];
+    }
+
+    const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
+    handler.setInputAction((click) => {
+      if (measureMode) {
+        const point = pickMeasureLatLng(click);
+        if (point) {
+          if (measureToolType === "radius") {
+            handleRadiusClick(point[0], point[1]);
+          } else {
+            addMeasurePoint(point[0], point[1], point[2]);
+          }
+        }
+        return;
+      }
+      if (linkMode) {
+        emitLinkMapPick(click);
+        return;
+      }
+      if (routePickMode) {
+        const point = pickLatLngFromClick(click);
+        if (point) {
+          syncMapEvent("route_point_pick", [routePickMode, point[0], point[1]]);
+        }
+        return;
+      }
+      if (routeAddMode && flightRouteEditActive) {
+        const point = pickLatLngFromClick(click);
+        if (point) {
+          syncMapEvent("flight_route_add", [point[0], point[1]]);
+        }
+        return;
+      }
+      if (detectionEditActive && detectionAddMode) {
+        const point = pickLatLngFromClick(click);
+        if (point) {
+          syncMapEvent("detection_add", [point[0], point[1]]);
+        }
+        return;
+      }
+      const picked = pickEntityThroughDomes(click.position);
+      if (
+        Cesium.defined(picked) &&
+        picked.id &&
+        picked.id.maapMeta &&
+        picked.id.maapMeta.type === "flight_route_waypoint"
+      ) {
+        if (flightRouteEditActive) {
+          syncMapEvent("flight_route_select", [picked.id.maapMeta.id]);
+        }
+        return;
+      }
+      if (pickCoordMode) {
+        const point = pickLatLngFromClick(click);
+        if (point) {
+          renderPickedCoordinate(point[0], point[1]);
+        }
+        return;
+      }
+      if (Cesium.defined(picked) && picked.id && picked.id.maapMeta) {
+        const meta = picked.id.maapMeta;
+        if (meta.type === "target") {
+          highlightTarget(meta.id);
+          document.title = "MAAP_SYNC|select_target|" + meta.id;
+        } else if (meta.type === "deployment") {
+          highlightTarget(meta.targetId);
+          document.title = "MAAP_SYNC|select_target|" + meta.targetId;
+        } else if (meta.type === "entity") {
+          if (meta.entityType === "risk_object") {
+            syncMapEvent("detection_select", [meta.entityId]);
+            highlightDetectionObject(meta.entityId);
+          }
+          syncMapEvent("select_entity", [meta.entityType, meta.entityId]);
+        }
+        return;
+      }
+    }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+
+    handler.setInputAction((click) => {
+      if (!flightRouteEditActive) {
+        return;
+      }
+      const picked = pickEntityThroughDomes(click.position);
+      if (
+        !Cesium.defined(picked) ||
+        !picked.id ||
+        !picked.id.maapMeta ||
+        picked.id.maapMeta.type !== "flight_route_waypoint"
+      ) {
+        return;
+      }
+      routeDragState = {
+        id: picked.id.maapMeta.id,
+        entity: picked.id,
+        moved: false,
+      };
+      viewer.scene.screenSpaceCameraController.enableRotate = false;
+      viewer.scene.screenSpaceCameraController.enableTranslate = false;
+    }, Cesium.ScreenSpaceEventType.LEFT_DOWN);
+
+    handler.setInputAction((movement) => {
+      if (
+        !measureMode ||
+        measureToolType !== "radius" ||
+        !measureState.activeRadius
+      ) {
+        if (routeDragState && routeDragState.entity) {
+          const cartesian = viewer.camera.pickEllipsoid(
+            movement.endPosition,
+            viewer.scene.globe.ellipsoid
+          );
+          if (cartesian) {
+            routeDragState.entity.position = cartesian;
+            routeDragState.moved = true;
+          }
+        }
+        return;
+      }
+      const point = pickMeasureLatLng(movement);
+      if (point) {
+        measureState.activeRadius.edge = point;
+        renderMeasureGraphics();
+      }
+    }, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
+
+    handler.setInputAction(() => {
+      if (!routeDragState) {
+        return;
+      }
+      const entity = routeDragState.entity;
+      const waypointId = routeDragState.id;
+      const moved = routeDragState.moved;
+      routeDragState = null;
+      viewer.scene.screenSpaceCameraController.enableRotate = true;
+      viewer.scene.screenSpaceCameraController.enableTranslate = true;
+      if (!entity || !moved) {
+        return;
+      }
+      const cartographic = Cesium.Cartographic.fromCartesian(
+        entity.position.getValue(Cesium.JulianDate.now())
+      );
+      const lat = Cesium.Math.toDegrees(cartographic.latitude);
+      const lng = Cesium.Math.toDegrees(cartographic.longitude);
+      document.title =
+        "MAAP_SYNC|flight_route_move|" + waypointId + "|" + lat + "|" + lng;
+    }, Cesium.ScreenSpaceEventType.LEFT_UP);
+
+    handler.setInputAction((click) => {
+      if (!measureMode) {
+        if (
+          !linkMode &&
+          !pickCoordMode &&
+          !(routeAddMode && flightRouteEditActive) &&
+          !(detectionEditActive && detectionAddMode)
+        ) {
+          showTeamContextMenu(click.position);
+        }
+        return;
+      }
+      if (measureToolType === "radius") {
+        cancelActiveRadius();
+        return;
+      }
+      finishActiveMeasureLine();
+    }, Cesium.ScreenSpaceEventType.RIGHT_CLICK);
+
+    handler.setInputAction(() => {
+      if (!measureMode) {
+        return;
+      }
+      if (measureToolType === "radius") {
+        cancelActiveRadius();
+        return;
+      }
+      finishActiveMeasureLine();
+    }, Cesium.ScreenSpaceEventType.LEFT_DOUBLE_CLICK);
+
+    function setWingIconUrl(url) {
+      if (url) {
+        wingIconUrl = url;
+      }
+    }
+
+    window.maapMap = {
+      fitToScenario,
+      panAndMark,
+      panAndMarkReference,
+      clearAllMarkers,
+      setMapLayerSpec,
+      setTargetMarkers,
+      highlightTarget,
+      highlightIngressCorridor,
+      setLinkMode,
+      fitToTarget,
+      fitToDetectionArea,
+      fitToTargetCard,
+      setAssetLayers,
+      setDetectedObjects,
+      setTeamMarkers,
+      setGroundTransportRoutes,
+      setLayerVisibility,
+      setDetectionCaptureMode,
+      restoreMapLayersAfterDetection,
+      setWingIconUrl,
+      setStadiaApiKey,
+      setCesiumIonToken,
+      setBasemap,
+      setMeasureMode,
+      setMeasureType,
+      clearMeasure,
+      setPickCoordMode,
+      setRouteAddMode,
+      clearPickedCoordinate,
+      setFlightRouteEditMode,
+      setDetectionEditMode,
+      setDetectionAddMode,
+      highlightDetectionObject,
+      updateCorridorFlightRoute,
+      setTerrainEnabled,
+      setAiFlightRoute,
+      clearAiFlightRoute,
+      setRoutePickMode,
+    };
+
+    loadCountryBorders();
+
+    document.title = "MAP_READY";
+    try {
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage(
+          { source: "maap-map", type: "map-ready" },
+          "*"
+        );
+      }
+    } catch (err) {
+      /* ignore */
+    }
+  </script>
+</body>
+</html>

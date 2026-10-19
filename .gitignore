@@ -1,0 +1,11 @@
+/weaponeering-frontend/node_modules
+/weaponeering-frontend/dist
+/weaponeering-backend/doc
+/weaponeering-backend/.venv
+**/__pycache__/
+**/*.pyc
+**/*.egg-info/
+.env
+**/.env
+*.pt
+.DS_Store

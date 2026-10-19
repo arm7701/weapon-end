@@ -1,0 +1,179 @@
+// PRODUCTION — deploy pre-built image tag to kubernetes-prod
+pipeline {
+    options {
+        timeout(time: 30, unit: 'MINUTES')
+        timestamps()
+        disableConcurrentBuilds()
+    }
+
+    agent {
+        kubernetes {
+            cloud 'kubernetes-prod'
+            yaml '''
+            apiVersion: v1
+            kind: Pod
+            spec:
+              dnsPolicy: "None"
+              dnsConfig:
+                nameservers:
+                - 10.229.4.68
+              containers:
+              - name: k8s
+                image: gcr.io/cloud-builders/kubectl
+                command: ["cat"]
+                tty: true
+                env:
+                - name: TZ
+                  value: Asia/Bangkok
+            '''
+        }
+    }
+
+    parameters {
+        string(name: 'DOCKER_IMAGE_NAME', defaultValue: '', description: 'Image tag to deploy, e.g. 1.0-20260902.01')
+        string(name: 'SOURCE_IMAGE_NAME', defaultValue: 'weaponeering-frontend-staging', description: 'Registry image name that was built in UAT/staging')
+        booleanParam(name: 'PROMOTE_STAGING_IMAGE', defaultValue: true, description: 'Pull/tag staging image as production image before deploy')
+    }
+
+    environment {
+        PROJECT_DIR = 'weaponeering-frontend'
+        IMAGE_NAME = 'weaponeering-frontend'
+        NAMESPACE = 'weaponeering-frontend-prod'
+        HOST_NAME = 'weaponeering.rtaf.mi.th'
+        CONTAINER_PORT = '80'
+        TCP_PORT = '80'
+        CLUSTER_CREDENTIALS = 'rancher-prod-01'
+    }
+
+    stages {
+        stage('Validate parameters') {
+            steps {
+                script {
+                    if (!params.DOCKER_IMAGE_NAME?.trim()) {
+                        error('DOCKER_IMAGE_NAME is required (image tag from staging/dev pipeline)')
+                    }
+                }
+            }
+        }
+
+        stage('Git checkout (manifests)') {
+            steps {
+                script {
+                    checkout scm
+                    if (fileExists("${PROJECT_DIR}/devops/kubernetes/deployment.yaml")) {
+                        env.PROJECT_ROOT = PROJECT_DIR
+                    } else if (fileExists('devops/kubernetes/deployment.yaml')) {
+                        env.PROJECT_ROOT = '.'
+                    } else {
+                        error("Kubernetes manifest not found in ${PROJECT_DIR}/ or workspace root")
+                    }
+                    echo "PROJECT_ROOT=${env.PROJECT_ROOT}"
+                }
+            }
+        }
+
+        stage('Promote image (optional)') {
+            when {
+                expression { params.PROMOTE_STAGING_IMAGE == true }
+            }
+            agent {
+                kubernetes {
+                    cloud 'kubernetes-prod'
+                    yaml '''
+                    apiVersion: v1
+                    kind: Pod
+                    spec:
+                      containers:
+                      - name: docker
+                        image: docker.io/docker:24.0.9-cli
+                        command: ["cat"]
+                        tty: true
+                        securityContext:
+                          privileged: true
+                        volumeMounts:
+                        - mountPath: /var/run/docker.sock
+                          name: docker-sock
+                      volumes:
+                      - name: docker-sock
+                        hostPath:
+                          path: /var/run/docker.sock
+                          type: Socket
+                    '''
+                }
+            }
+            steps {
+                container('docker') {
+                    withCredentials([usernamePassword(credentialsId: "${env.REGISTRY_CREDENTIALS}", usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD')]) {
+                        sh """
+                            docker login ${env.REGISTRY_URL} --username ${USERNAME} --password ${PASSWORD}
+                            docker pull ${env.REGISTRY_URL}/${params.SOURCE_IMAGE_NAME}:${params.DOCKER_IMAGE_NAME}
+                            docker tag ${env.REGISTRY_URL}/${params.SOURCE_IMAGE_NAME}:${params.DOCKER_IMAGE_NAME} ${env.REGISTRY_URL}/${IMAGE_NAME}:${params.DOCKER_IMAGE_NAME}
+                            docker push ${env.REGISTRY_URL}/${IMAGE_NAME}:${params.DOCKER_IMAGE_NAME}
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('Deploy to Kubernetes Production') {
+            steps {
+                container('k8s') {
+                    script {
+                        def projectRoot = env.PROJECT_ROOT
+                        if (!projectRoot?.trim()) {
+                            if (fileExists("${env.PROJECT_DIR}/devops/kubernetes/deployment.yaml")) {
+                                projectRoot = env.PROJECT_DIR
+                            } else if (fileExists('devops/kubernetes/deployment.yaml')) {
+                                projectRoot = '.'
+                            } else {
+                                error('Cannot resolve PROJECT_ROOT for deployment manifest')
+                            }
+                            env.PROJECT_ROOT = projectRoot
+                        }
+                        def k8sManifest = "${projectRoot}/devops/kubernetes/deployment.yaml"
+                        if (!fileExists(k8sManifest)) {
+                            error("Deployment manifest not found: ${k8sManifest}")
+                        }
+                        withCredentials([
+                            file(credentialsId: "${CLUSTER_CREDENTIALS}", variable: 'KUBECONFIG'),
+                            usernamePassword(credentialsId: "${env.REGISTRY_CREDENTIALS}", usernameVariable: 'REGISTRY_USER', passwordVariable: 'REGISTRY_PASS')
+                        ]) {
+                            sh 'kubectl get nodes'
+                            sh """
+                                kubectl create namespace ${NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
+
+                                kubectl -n ${NAMESPACE} create secret docker-registry ${env.PULL_SECRET} \
+                                    --docker-server=${env.REGISTRY_URL} \
+                                    --docker-username=\$REGISTRY_USER \
+                                    --docker-password=\$REGISTRY_PASS \
+                                    --dry-run=client -o yaml | kubectl apply -f -
+
+                                sed -e "s|{{NAMESPACE}}|${NAMESPACE}|g" \
+                                    -e "s|{{HOST_NAME}}|${HOST_NAME}|g" \
+                                    -e "s|{{PULL_IMAGE}}|${env.REGISTRY_URL}/${IMAGE_NAME}:${params.DOCKER_IMAGE_NAME}|g" \
+                                    -e "s|{{PULL_SECRET}}|${env.PULL_SECRET}|g" \
+                                    -e "s|{{IMAGE_NAME}}|${IMAGE_NAME}|g" \
+                                    -e "s|{{CONTAINER_PORT}}|${CONTAINER_PORT}|g" \
+                                    -e "s|{{TCP_PORT}}|${TCP_PORT}|g" \
+                                    ${k8sManifest} | kubectl apply -f -
+
+                                kubectl -n ${NAMESPACE} rollout status deployment/${IMAGE_NAME}-deployment --timeout=300s
+                            """
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            script {
+                def jobName = env.JOB_NAME
+                def buildUrl = env.BUILD_URL
+                def message = "Weaponeering frontend prod deploy: ${currentBuild.result} — ${jobName} ${buildUrl}"
+                echo message
+            }
+        }
+    }
+}

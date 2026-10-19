@@ -1,0 +1,17 @@
+# ConfigMap สำหรับ namespace ที่มีอยู่แล้วบน Rancher
+# cluster: prod-01  project: swc-strategic  namespace: weaponeering-backend-uat
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: weaponeering-backend-staging-config
+  namespace: weaponeering-backend-uat
+  labels:
+    app: weaponeering-backend-staging
+    env: uat
+    project: swc-strategic
+data:
+  APP_NAME: "Weaponeering API"
+  API_PREFIX: "/api"
+  CORS_ORIGINS: "https://weaponeering-uat.rtaf.mi.th"
+  RTAF_MFA_VERIFY_SSL: "true"
+  WORKERS: "2"

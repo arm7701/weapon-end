@@ -1,0 +1,4 @@
+name: weaponeering
+
+include:
+  - path: ./docker-compose.dev.yml

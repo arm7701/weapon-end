@@ -1,0 +1,106 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{IMAGE_NAME}}-deployment
+  namespace: {{NAMESPACE}}
+  labels:
+    app: {{IMAGE_NAME}}
+spec:
+  replicas: 1
+  progressDeadlineSeconds: 600
+  selector:
+    matchLabels:
+      app: {{IMAGE_NAME}}
+  template:
+    metadata:
+      labels:
+        app: {{IMAGE_NAME}}
+    spec:
+      imagePullSecrets:
+      - name: {{PULL_SECRET}}
+      containers:
+        - name: {{IMAGE_NAME}}
+          image: {{PULL_IMAGE}}
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1536Mi"
+          ports:
+            - name: http
+              containerPort: {{CONTAINER_PORT}}
+          imagePullPolicy: Always
+          envFrom:
+            - secretRef:
+                name: {{SECRETS}}
+            - configMapRef:
+                name: {{CONFIG_MAP}}
+          startupProbe:
+            httpGet:
+              path: /health
+              port: {{CONTAINER_PORT}}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 30
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: {{CONTAINER_PORT}}
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: {{CONTAINER_PORT}}
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+      dnsPolicy: "None"
+      dnsConfig:
+        nameservers:
+          - 10.229.4.68
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{IMAGE_NAME}}-service
+  namespace: {{NAMESPACE}}
+  labels:
+    app: {{IMAGE_NAME}}
+spec:
+    selector:
+      app: {{IMAGE_NAME}}
+    ports:
+      - protocol: TCP
+        port: {{TCP_PORT}}
+        targetPort: {{CONTAINER_PORT}}
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{IMAGE_NAME}}-ingress
+  namespace: {{NAMESPACE}}
+  labels:
+    app: {{IMAGE_NAME}}
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "200m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+spec:
+  rules:
+  - host: {{HOST_NAME}}
+    http:
+      paths:
+      - pathType: Prefix
+        path: "/"
+        backend:
+          service:
+            name: {{IMAGE_NAME}}-service
+            port:
+              number: {{TCP_PORT}}

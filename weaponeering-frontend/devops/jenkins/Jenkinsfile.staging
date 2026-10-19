@@ -1,0 +1,372 @@
+// STAGING / UAT — deploys to existing namespace on prod-01 / project swc-strategic
+pipeline {
+    options {
+        timeout(time: 60, unit: 'MINUTES')
+        timestamps()
+        disableConcurrentBuilds()
+    }
+
+    agent {
+        kubernetes {
+            cloud 'kubernetes-prod'
+            yaml '''
+            apiVersion: v1
+            kind: Pod
+            spec:
+              dnsPolicy: "ClusterFirst"
+              containers:
+              - name: node
+                image: docker.io/node:20-alpine
+                command: ["cat"]
+                tty: true
+                env:
+                - name: TZ
+                  value: Asia/Bangkok
+              - name: k8s
+                image: gcr.io/cloud-builders/kubectl
+                command: ["cat"]
+                tty: true
+                env:
+                - name: TZ
+                  value: Asia/Bangkok
+              - name: docker
+                image: docker.io/docker:24.0.9-cli
+                command: ["cat"]
+                tty: true
+                securityContext:
+                  privileged: true
+                env:
+                - name: TZ
+                  value: Asia/Bangkok
+                volumeMounts:
+                - mountPath: /var/run/docker.sock
+                  name: docker-sock
+              - name: owasp
+                image: ghcr.io/zaproxy/zaproxy:latest
+                command: ["cat"]
+                tty: true
+                env:
+                - name: TZ
+                  value: Asia/Bangkok
+                volumeMounts:
+                - mountPath: /zap/wrk
+                  name: report-storage
+              volumes:
+              - name: docker-sock
+                hostPath:
+                  path: /var/run/docker.sock
+                  type: Socket
+              - name: report-storage
+                emptyDir: {}
+            '''
+        }
+    }
+
+    environment {
+        PROJECT_DIR = 'weaponeering-frontend'
+        IMAGE_NAME = 'weaponeering-frontend-staging'
+        NAMESPACE = 'weaponeering-frontend-uat'
+        HOST_NAME = 'weaponeering-uat.rtaf.mi.th'
+        CONTAINER_PORT = '80'
+        TCP_PORT = '80'
+        SONAR_PROJECT_KEY = 'weaponeering_frontend_ui'
+        SCANNER_HOME = tool 'SonarScanner'
+        CLUSTER_CREDENTIALS = 'rancher-prod-01'
+        VITE_API_BASE_URL = 'https://weaponeering-api-uat.rtaf.mi.th/api'
+        VITE_BASE_PATH = '/'
+        DOCKER_IMAGE_NAME = ''
+        GIT_HEAD = ''
+        PROD_HOST_NAME = 'weaponeering.rtaf.mi.th'
+        PROD_NAMESPACE = 'weaponeering-frontend-prod'
+    }
+
+    stages {
+        stage('Safety check (staging only)') {
+            steps {
+                script {
+                    def ns = "${NAMESPACE}".toLowerCase()
+                    def host = "${HOST_NAME}".toLowerCase()
+                    boolean nsLookLikeProd = ns == "${PROD_NAMESPACE}".toLowerCase() || (ns.contains('prod') && !ns.contains('staging') && !ns.contains('uat'))
+                    boolean hostLookLikeProd = host == "${PROD_HOST_NAME}".toLowerCase() || (host.contains('prod') && !host.contains('staging') && !host.contains('uat'))
+
+                    if (nsLookLikeProd) {
+                        error("Refusing staging pipeline: namespace '${NAMESPACE}' looks like production")
+                    }
+                    if (hostLookLikeProd) {
+                        error("Refusing staging pipeline: host '${HOST_NAME}' looks like production")
+                    }
+                }
+            }
+        }
+
+        stage('Build job setting up') {
+            steps {
+                script {
+                    sh 'export TZ=Asia/Bangkok'
+                    def initialDailyVersion = 0
+                    try {
+                        if (params.DAILY_IMAGE_VERSION != null && params.DAILY_IMAGE_VERSION.isNumber()) {
+                            initialDailyVersion = params.DAILY_IMAGE_VERSION.toInteger()
+                        }
+                    } catch (Exception e) {
+                        initialDailyVersion = 0
+                    }
+
+                    def previousBuild = currentBuild.getPreviousBuild()
+                    def currentBuildDate = new Date(currentBuild.startTimeInMillis).format('yyyyMMdd')
+                    def calculatedDailyVersion = 1
+                    if (previousBuild != null) {
+                        def previousBuildDate = new Date(previousBuild.startTimeInMillis).format('yyyyMMdd')
+                        if (currentBuildDate == previousBuildDate) {
+                            calculatedDailyVersion = initialDailyVersion + 1
+                        }
+                    }
+
+                    def dailyVersionString = String.format('%02d', calculatedDailyVersion)
+                    def FIXED_VERSION = params.FIXED_VERSION ?: '1.0'
+                    env.BRANCH_NAME = params.BRANCH_NAME ?: env.BRANCH_NAME
+                    DOCKER_IMAGE_NAME = "${FIXED_VERSION}-${currentBuildDate}.${dailyVersionString}"
+                }
+            }
+        }
+
+        stage('Git clone and Setup') {
+            steps {
+                script {
+                    deleteDir()
+                    checkout scm
+                    GIT_HEAD = sh(returnStdout: true, script: 'git rev-parse --short HEAD').trim()
+                    if (fileExists("${PROJECT_DIR}/Dockerfile")) {
+                        env.PROJECT_ROOT = PROJECT_DIR
+                    } else if (fileExists('Dockerfile')) {
+                        env.PROJECT_ROOT = '.'
+                    } else {
+                        error("Dockerfile not found in ${PROJECT_DIR}/ or workspace root")
+                    }
+                    echo "PROJECT_ROOT=${env.PROJECT_ROOT}"
+                }
+            }
+        }
+
+        stage('SonarQube Analysis') {
+            when { expression { params.SKIP_SONAR_SCAN != true } }
+            steps {
+                container('node') {
+                    dir(env.PROJECT_ROOT) {
+                        script {
+                            withSonarQubeEnv('SonarScanner') {
+                                sh """${SCANNER_HOME}/bin/sonar-scanner \
+                                    -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
+                                    -Dsonar.host.url=https://${env.SONAR_URL} \
+                                    -Dsonar.projectVersion=${DOCKER_IMAGE_NAME} \
+                                    -Dsonar.sources=src \
+                                    -Dsonar.exclusions=**/node_modules/**,**/dist/**,**/cesium-static/**"""
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('SonarQube Quality Gate Check') {
+            when { expression { params.SKIP_SONAR_SCAN != true } }
+            steps {
+                container('docker') {
+                    script {
+                        timeout(time: 3600, unit: 'SECONDS') {
+                            def qg = waitForQualityGate()
+                            if (qg.status != 'OK') {
+                                currentBuild.result = 'FAILURE'
+                                error('SonarQube Quality Gate failed')
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Unit Test') {
+            when { expression { params.SKIP_UNIT_TEST != true } }
+            steps {
+                container('node') {
+                    dir(env.PROJECT_ROOT) {
+                        sh '''
+                            npm ci
+                            npm run build
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Build image') {
+            when { expression { params.SKIP_BUILD_IMAGE != true } }
+            steps {
+                container('docker') {
+                    script {
+                        sh '''
+                            echo "=== Docker connectivity check ==="
+                            ls -la /var/run/docker.sock || true
+                            docker version || true
+                            docker info >/tmp/docker-info.txt 2>&1 || cat /tmp/docker-info.txt
+                        '''
+                        sh """
+                            docker build --no-cache \
+                                -f ${env.PROJECT_ROOT}/Dockerfile \
+                                --build-arg APP_VERSION=${DOCKER_IMAGE_NAME} \
+                                --build-arg GIT_COMMIT=${GIT_HEAD} \
+                                --build-arg VITE_API_BASE_URL=${VITE_API_BASE_URL} \
+                                --build-arg VITE_BASE_PATH=${VITE_BASE_PATH} \
+                                -t ${IMAGE_NAME}:${DOCKER_IMAGE_NAME} \
+                                ${env.PROJECT_ROOT}
+                            docker tag ${IMAGE_NAME}:${DOCKER_IMAGE_NAME} ${env.REGISTRY_URL}/${IMAGE_NAME}:${DOCKER_IMAGE_NAME}
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('Image scan (Trivy)') {
+            when { expression { params.SKIP_TRIVY_SCAN != true } }
+            steps {
+                container('docker') {
+                    script {
+                        def trivyVersion = sh(
+                            script: 'wget -qO - "https://api.github.com/repos/aquasecurity/trivy/releases/latest" | grep \'"tag_name":\' | sed -E \'s/.*"v([^"]+)".*/\\1/\'',
+                            returnStdout: true
+                        ).trim()
+                        sh(script: "wget --no-verbose https://github.com/aquasecurity/trivy/releases/download/v${trivyVersion}/trivy_${trivyVersion}_Linux-64bit.tar.gz -O - | tar -zxvf -", returnStdout: true)
+                        sh "./trivy image --no-progress --scanners vuln --format template --template \"@contrib/html.tpl\" -o trivy-${IMAGE_NAME}-${DOCKER_IMAGE_NAME}-report.html ${IMAGE_NAME}:${DOCKER_IMAGE_NAME}"
+                    }
+                }
+            }
+        }
+
+        stage('Push image to Nexus') {
+            when { expression { params.SKIP_PUSH_IMAGE != true } }
+            steps {
+                container('docker') {
+                    withCredentials([usernamePassword(credentialsId: "${env.REGISTRY_CREDENTIALS}", usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD')]) {
+                        sh """
+                            docker login ${env.REGISTRY_URL} --username ${USERNAME} --password ${PASSWORD}
+                            docker push ${env.REGISTRY_URL}/${IMAGE_NAME}:${DOCKER_IMAGE_NAME}
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('Deploy to Kubernetes Staging Env') {
+            when { expression { params.SKIP_DEPLOY != true } }
+            steps {
+                container('k8s') {
+                    script {
+                        def projectRoot = env.PROJECT_ROOT
+                        if (!projectRoot?.trim()) {
+                            projectRoot = fileExists("${env.PROJECT_DIR}/Dockerfile") ? env.PROJECT_DIR : '.'
+                            env.PROJECT_ROOT = projectRoot
+                        }
+                        def namespaceManifest = "${projectRoot}/devops/kubernetes/namespace-staging.yaml"
+                        def k8sManifest = "${projectRoot}/devops/kubernetes/deployment.yaml"
+                        if (!fileExists(namespaceManifest)) {
+                            error("Namespace manifest not found: ${namespaceManifest}")
+                        }
+                        if (!fileExists(k8sManifest)) {
+                            error("Deployment manifest not found: ${k8sManifest}")
+                        }
+                        withCredentials([
+                            file(credentialsId: "${CLUSTER_CREDENTIALS}", variable: 'KUBECONFIG'),
+                            usernamePassword(credentialsId: "${env.REGISTRY_CREDENTIALS}", usernameVariable: 'REGISTRY_USER', passwordVariable: 'REGISTRY_PASS')
+                        ]) {
+                            sh """
+                                kubectl get namespace ${NAMESPACE}
+                                kubectl apply -f ${namespaceManifest}
+                                kubectl -n ${NAMESPACE} create secret docker-registry ${env.PULL_SECRET} \
+                                    --docker-server=${env.REGISTRY_URL} \
+                                    --docker-username=\$REGISTRY_USER \
+                                    --docker-password=\$REGISTRY_PASS \
+                                    --dry-run=client -o yaml | kubectl apply -f -
+
+                                sed -e "s|{{NAMESPACE}}|${NAMESPACE}|g" \
+                                    -e "s|{{HOST_NAME}}|${HOST_NAME}|g" \
+                                    -e "s|{{PULL_IMAGE}}|${env.REGISTRY_URL}/${IMAGE_NAME}:${DOCKER_IMAGE_NAME}|g" \
+                                    -e "s|{{PULL_SECRET}}|${env.PULL_SECRET}|g" \
+                                    -e "s|{{IMAGE_NAME}}|${IMAGE_NAME}|g" \
+                                    -e "s|{{CONTAINER_PORT}}|${CONTAINER_PORT}|g" \
+                                    -e "s|{{TCP_PORT}}|${TCP_PORT}|g" \
+                                    ${k8sManifest} | kubectl apply -f -
+
+                                kubectl -n ${NAMESPACE} rollout status deployment/${IMAGE_NAME}-deployment --timeout=300s
+                            """
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Scanning target on OWASP') {
+            when { expression { params.SKIP_OWASP_SCAN != true } }
+            steps {
+                container('owasp') {
+                    script {
+                        def target = "http://${IMAGE_NAME}-service.${NAMESPACE}.svc.cluster.local:${TCP_PORT}"
+                        if ("${params.SCAN_TYPE}" == 'APIS') {
+                            sh "zap-api-scan.py -t ${target}/openapi.json -r report.html -I || zap-baseline.py -t ${target} -r report.html -I"
+                        } else if ("${params.SCAN_TYPE}" == 'Full') {
+                            sh "zap-full-scan.py -t ${target} -r report.html -I"
+                        } else {
+                            sh "zap-baseline.py -t ${target} -r report.html -I"
+                        }
+                        sh "cp -r /zap/wrk/report.html ${WORKSPACE}/owasp-zap-${IMAGE_NAME}-${DOCKER_IMAGE_NAME}-report.html"
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            container('jnlp') {
+                script {
+                    def nextDailyVersion = 1
+                    def currentBuildDateForPost = new Date(currentBuild.startTimeInMillis).format('yyyyMMdd')
+                    def previousBuildForPost = currentBuild.getPreviousBuild()
+                    if (previousBuildForPost != null) {
+                        def previousBuildDateForPost = new Date(previousBuildForPost.startTimeInMillis).format('yyyyMMdd')
+                        if (currentBuildDateForPost == previousBuildDateForPost) {
+                            def tempInitial = 0
+                            try {
+                                if (params.DAILY_IMAGE_VERSION != null && params.DAILY_IMAGE_VERSION.isNumber()) {
+                                    tempInitial = params.DAILY_IMAGE_VERSION.toInteger()
+                                }
+                            } catch (e) { /* ignore */ }
+                            nextDailyVersion = tempInitial + 1
+                        }
+                    }
+                    properties([
+                        parameters([
+                            string(defaultValue: "${nextDailyVersion}", name: 'DAILY_IMAGE_VERSION', trim: true),
+                            string(defaultValue: "${env.BRANCH_NAME}", name: 'BRANCH_NAME', trim: true),
+                            string(defaultValue: "${params.FIXED_VERSION ?: '1.0'}", name: 'FIXED_VERSION', trim: true),
+                            booleanParam(defaultValue: params.SKIP_SONAR_SCAN ?: false, name: 'SKIP_SONAR_SCAN'),
+                            booleanParam(defaultValue: params.SKIP_UNIT_TEST ?: false, name: 'SKIP_UNIT_TEST'),
+                            booleanParam(defaultValue: params.SKIP_BUILD_IMAGE ?: false, name: 'SKIP_BUILD_IMAGE'),
+                            booleanParam(defaultValue: params.SKIP_TRIVY_SCAN ?: false, name: 'SKIP_TRIVY_SCAN'),
+                            booleanParam(defaultValue: params.SKIP_PUSH_IMAGE ?: false, name: 'SKIP_PUSH_IMAGE'),
+                            booleanParam(defaultValue: params.SKIP_DEPLOY ?: false, name: 'SKIP_DEPLOY'),
+                            booleanParam(defaultValue: params.SKIP_OWASP_SCAN ?: true, name: 'SKIP_OWASP_SCAN'),
+                            choice(choices: ['Baseline', 'APIS', 'Full'], name: 'SCAN_TYPE', defaultValue: params.SCAN_TYPE ?: 'Baseline'),
+                        ])
+                    ])
+                }
+            }
+        }
+        always {
+            container('jnlp') {
+                archiveArtifacts artifacts: "trivy-${IMAGE_NAME}-${DOCKER_IMAGE_NAME}-report.html, owasp-zap-${IMAGE_NAME}-${DOCKER_IMAGE_NAME}-report.html", fingerprint: true, allowEmptyArchive: true
+                publishHTML(target: [allowMissing: true, alwaysLinkToLastBuild: false, keepAll: true, reportDir: '.', reportFiles: "trivy-${IMAGE_NAME}-${DOCKER_IMAGE_NAME}-report.html", reportName: 'Trivy Scan Report'])
+                publishHTML(target: [allowMissing: true, alwaysLinkToLastBuild: false, keepAll: true, reportDir: '.', reportFiles: "owasp-zap-${IMAGE_NAME}-${DOCKER_IMAGE_NAME}-report.html", reportName: 'OWASP ZAP Scan Report'])
+            }
+        }
+    }
+}

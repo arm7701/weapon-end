@@ -1,0 +1,32 @@
+{
+  "name": "weaponeering_ui",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@cesium/engine": "9.1.0",
+    "@cesium/widgets": "6.1.0",
+    "@googlemaps/js-api-loader": "^2.1.1",
+    "@zip.js/zip.js": "2.7.34",
+    "axios": "^1.18.1",
+    "bootstrap": "^5.3.8",
+    "bootstrap-icons": "^1.13.1",
+    "cesium": "1.117.0",
+    "docx": "^9.7.1",
+    "jspdf": "^4.2.1",
+    "mgrs": "^2.2.0",
+    "vite-plugin-static-copy": "^2.3.2",
+    "vue": "^3.5.12",
+    "vue-router": "^4.6.4",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.1.4",
+    "vite": "^5.4.10"
+  }
+}

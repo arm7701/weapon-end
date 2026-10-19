@@ -1,0 +1,88 @@
+# Development compose
+# จุดเด่น: mount source code + hot reload + มีบริการฐานข้อมูล pgpool พร้อมข้อมูลเริ่มต้นในตัว
+services:
+  pgpool:
+    image: postgres:17
+    container_name: pgpool
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-weaponeering}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - pgpool_data:/var/lib/postgresql/data
+      - ./database/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-weaponeering}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - shared-postgres-network
+
+  api:
+    build:
+      context: ./weaponeering-backend
+      dockerfile: Dockerfile.dev
+    container_name: weaponeering-backend
+    restart: no
+    command: ["sh", "/app/entrypoint-dev.sh"]
+    env_file:
+      - ./weaponeering-backend/.env
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      - ./weaponeering-backend/src:/app/src
+      - ./weaponeering-backend/alembic:/app/alembic
+      - ./weaponeering-backend/alembic.ini:/app/alembic.ini
+      - ./weaponeering-backend/requirements-api.txt:/app/requirements-api.txt
+      - ./weaponeering-backend/requirements-detection.txt:/app/requirements-detection.txt
+      - ./weaponeering-backend/entrypoint-dev.sh:/app/entrypoint-dev.sh
+      - ./weaponeering-backend/building-seg.pt:/app/building-seg.pt:ro
+      - ./weaponeering-backend/data:/app/data
+    environment:
+      WEAPONEERING_DATA_DIR: /app/data
+    depends_on:
+      pgpool:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+    networks:
+      - shared-postgres-network
+
+  frontend:
+    build:
+      context: ./weaponeering-frontend
+      dockerfile: Dockerfile.dev
+    container_name: weaponeering-frontend
+    restart: no
+    env_file:
+      - ./weaponeering-frontend/.env
+    environment:
+      NODE_ENV: development
+      VITE_API_PROXY: http://api:8000
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    volumes:
+      - ./weaponeering-frontend:/app
+      - /app/node_modules
+      - ./weaponeering-frontend/entrypoint-dev.sh:/app/entrypoint-dev.sh
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - shared-postgres-network
+
+volumes:
+  pgpool_data:
+
+networks:
+  shared-postgres-network:
+    name: shared-postgres-network
+    driver: bridge

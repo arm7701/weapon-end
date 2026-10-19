@@ -1,0 +1,299 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&family=Noto+Sans+Thai:wght@300;400;500;600;700&family=Sarabun:wght@300;400;500;600;700&display=swap');
+
+:root {
+  --font-sans: 'IBM Plex Sans Thai', 'Inter', 'Noto Sans Thai', 'Sarabun', 'Leelawadee UI', Tahoma, sans-serif;
+  --font-mono: 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  font-family: var(--font-sans);
+  line-height: 1.55;
+  font-weight: 400;
+  letter-spacing: 0.012em;
+  word-spacing: 0.02em;
+
+  --bg: #f5f5f5;
+  --text: #222222;
+  --panel-bg: #ffffff;
+  --surface: #ffffff;
+  --border: #dddddd;
+  --control-bg: #ffffff;
+  --control-border: #cccccc;
+  --nav-bg: #ffffff;
+  --nav-text: #000000;
+  --muted: #6c757d;
+  --table-head: #f8f9fa;
+  --scrollbar-track: #f1f1f1;
+  --scrollbar-thumb: #888888;
+
+  color: var(--text);
+  background-color: var(--bg);
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+}
+
+#app {
+  width: 100%;
+  height: 100%;
+}
+
+a {
+  color: #0d6efd;
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+body.dark-theme {
+  --bg: #000000;
+  --text: #ffffff;
+  --panel-bg: #111111;
+  --surface: #111111;
+  --border: #444444;
+  --control-bg: #111111;
+  --control-border: #444444;
+  --nav-bg: #000000;
+  --nav-text: #ffffff;
+  --muted: #bdbdbd;
+  --table-head: #111111;
+  --scrollbar-track: #111111;
+  --scrollbar-thumb: #555555;
+  background-color: var(--bg);
+  color: var(--text);
+}
+
+body.light-theme {
+  --bg: #ffffff;
+  --text: #000000;
+  --panel-bg: #ffffff;
+  --surface: #ffffff;
+  --border: #dddddd;
+  --control-bg: #ffffff;
+  --control-border: #cccccc;
+  --nav-bg: #ffffff;
+  --nav-text: #000000;
+  --muted: #6c757d;
+  --table-head: #f8f9fa;
+  --scrollbar-track: #f1f1f1;
+  --scrollbar-thumb: #888888;
+  background-color: var(--bg);
+  color: var(--text);
+}
+
+body.dark-theme,
+body.dark-theme .card,
+body.dark-theme .form-section,
+body.dark-theme .analysis-result,
+body.dark-theme .chatbot-messages,
+body.dark-theme .modal-card,
+body.dark-theme .sidebar-container,
+body.dark-theme .right-panel,
+body.dark-theme .map-panel,
+body.dark-theme .sidebar-col,
+body.dark-theme .map-col,
+body.dark-theme .right-col,
+body.dark-theme .table,
+body.dark-theme .table td,
+body.dark-theme .table th,
+body.dark-theme .navbar,
+body.dark-theme .navbar .nav-link,
+body.dark-theme .dropdown-menu,
+body.dark-theme .nav-tabs,
+body.dark-theme .nav-tabs .nav-link,
+body.dark-theme .modal-body,
+body.dark-theme .modal-header,
+body.dark-theme .modal-footer,
+body.dark-theme .alert,
+body.dark-theme .form-control,
+body.dark-theme .form-select,
+body.dark-theme .btn,
+body.dark-theme .btn-outline-primary,
+body.dark-theme .btn-outline-danger,
+body.dark-theme .btn-outline-secondary,
+body.dark-theme .btn-outline-info,
+body.dark-theme .btn-outline-dark,
+body.dark-theme .btn-outline-light,
+body.dark-theme .table > :not(caption) > * > * {
+  background-color: #000000 !important;
+  color: #ffffff !important;
+  border-color: #444444 !important;
+}
+
+body.dark-theme .form-control,
+body.dark-theme .form-select,
+body.dark-theme input,
+body.dark-theme select,
+body.dark-theme textarea {
+  background-color: #111111 !important;
+  color: #ffffff !important;
+  border: 2px solid #444444 !important;
+}
+
+body.dark-theme .form-control:focus,
+body.dark-theme .form-select:focus {
+  background-color: #1a1a1a !important;
+  border-color: #0d6efd !important;
+  box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.25) !important;
+}
+
+body.dark-theme .btn-success,
+body.dark-theme .btn-primary,
+body.dark-theme .btn-outline-light {
+  color: #ffffff !important;
+}
+
+body.dark-theme .text-muted {
+  color: #bdbdbd !important;
+}
+
+body.dark-theme .table-light,
+body.dark-theme .table-light > th,
+body.dark-theme .table-light > td,
+body.dark-theme .table thead th,
+body.dark-theme .table thead td {
+  background-color: #111111 !important;
+  color: #ffffff !important;
+  border-color: #444444 !important;
+}
+
+body.dark-theme .nav-tabs .nav-link,
+body.dark-theme .nav-link {
+  color: #ffffff !important;
+}
+
+body.dark-theme .nav-tabs .nav-link.active {
+  color: #0d6efd !important;
+}
+
+body.dark-theme .progress {
+  background-color: #222222;
+}
+
+body.dark-theme .progress-bar {
+  background-color: #198754;
+}
+
+body.dark-theme .badge.bg-success {
+  background-color: #198754 !important;
+}
+
+body.dark-theme .badge.bg-warning {
+  background-color: #ffc107 !important;
+  color: #000000 !important;
+}
+
+body.dark-theme .text-success {
+  color: #2fdc72 !important;
+}
+
+body.light-theme .card,
+body.light-theme .form-section,
+body.light-theme .analysis-result,
+body.light-theme .chatbot-messages,
+body.light-theme .modal-card,
+body.light-theme .sidebar-container,
+body.light-theme .right-panel,
+body.light-theme .map-panel,
+body.light-theme .sidebar-col,
+body.light-theme .map-col,
+body.light-theme .right-col,
+body.light-theme .table,
+body.light-theme .table td,
+body.light-theme .table th {
+  background-color: #ffffff;
+  color: #000000;
+  border-color: #dddddd;
+}
+
+body.light-theme .form-control,
+body.light-theme .form-select,
+body.light-theme .btn-outline-primary,
+body.light-theme .btn-outline-danger,
+body.light-theme .btn-outline-secondary,
+body.light-theme .btn-outline-info,
+body.light-theme .btn-outline-dark,
+body.light-theme .btn-outline-light {
+  background-color: #ffffff;
+  color: #000000;
+  border-color: #cccccc;
+}
+
+button {
+  cursor: pointer;
+  font-family: inherit;
+  letter-spacing: 0.015em;
+}
+
+input, select, textarea, .form-control, .form-select, .nav-link, .btn, .dropdown-item, .table, .card, .modal, .alert, label, small, span, p, th, td {
+  font-family: inherit;
+  letter-spacing: 0.012em;
+}
+
+h1, h2, h3, h4, h5, h6, strong, b {
+  font-family: inherit;
+  letter-spacing: 0.015em;
+  line-height: 1.4;
+}
+
+.table, td, th {
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+}
+
+body {
+  font-family: var(--font-sans);
+  line-height: 1.55;
+  letter-spacing: 0.012em;
+  background-color: var(--bg);
+  color: var(--text);
+}
+
+.navbar,
+body.light-theme .navbar {
+  background-color: var(--nav-bg) !important;
+}
+
+.navbar .nav-link,
+body.light-theme .navbar .nav-link,
+body.dark-theme .navbar .nav-link {
+  color: var(--nav-text) !important;
+}
+
+/* Remove default scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}

@@ -1,0 +1,72 @@
+# Production compose
+# รวมบริการ pgpool (PostgreSQL 17 + ข้อมูลเริ่มต้น), Backend (FastAPI), และ Frontend (Nginx)
+services:
+  pgpool:
+    image: postgres:17
+    container_name: pgpool
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-weaponeering}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - pgpool_data:/var/lib/postgresql/data
+      - ./database/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-weaponeering}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - shared-postgres-network
+
+  api:
+    build:
+      context: ./weaponeering-backend
+      dockerfile: Dockerfile
+    container_name: weaponeering-backend
+    restart: no
+    env_file:
+      - ./weaponeering-backend/.env
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    depends_on:
+      pgpool:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+    networks:
+      - shared-postgres-network
+
+  frontend:
+    build:
+      context: ./weaponeering-frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api}
+        VITE_CESIUM_ION_TOKEN: ${VITE_CESIUM_ION_TOKEN:-}
+    container_name: weaponeering-frontend
+    restart: no
+    env_file:
+      - ./weaponeering-frontend/.env
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - shared-postgres-network
+
+volumes:
+  pgpool_data:
+
+networks:
+  shared-postgres-network:
+    name: shared-postgres-network
+    driver: bridge
