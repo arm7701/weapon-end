@@ -83,9 +83,11 @@
         :detections="detections"
         :selected-target-id="selectedTargetId"
         :selected-coordinate-id="selectedCoordinateId"
+        :detecting="detecting"
         @deleted="$emit('detection-deleted', $event)"
         @select-object="$emit('select-detection', $event)"
         @error="$emit('detection-error', $event)"
+        @run-detection="$emit('run-detection', $event)"
       />
 
       <TargetRiskDirectionPanel
@@ -131,6 +133,7 @@ export default {
     selectedCoordinateId: { type: String, default: '' },
     selectedWingId: { type: String, default: '' },
     selectedTransportId: { type: String, default: '' },
+    detecting: { type: Boolean, default: false },
   },
   emits: [
     'toggle',
@@ -143,6 +146,7 @@ export default {
     'detection-deleted',
     'select-detection',
     'detection-error',
+    'run-detection',
   ],
   setup(props) {
     const tab = ref('targets')

@@ -8,6 +8,31 @@
       <em>{{ filteredDetections.length }}</em>
     </header>
 
+    <div class="detect-action-wrap">
+      <div class="detect-controls-row">
+        <label class="radius-select-label" title="รัศมีการตรวจจับรอบเป้าหมาย (ม.)">
+          <i class="bi bi-bullseye"></i>
+          <select v-model.number="selectedRadiusM" :disabled="detecting" class="radius-select">
+            <option :value="50">50 ม.</option>
+            <option :value="100">100 ม.</option>
+            <option :value="120">120 ม. (มาตรฐาน)</option>
+            <option :value="200">200 ม.</option>
+            <option :value="300">300 ม.</option>
+          </select>
+        </label>
+        <button
+          type="button"
+          class="run-detect-btn"
+          :disabled="detecting || !selectedTargetId"
+          :title="detecting ? 'กำลังจับภาพและประมวลผลโมเดล building-seg.pt' : 'ตรวจจับอาคารรอบเป้าหมายที่เลือก'"
+          @click="onRunDetection"
+        >
+          <i class="bi" :class="detecting ? 'bi-hourglass-split spin' : 'bi-radar'"></i>
+          <span>{{ detecting ? 'กำลังตรวจจับอาคาร…' : 'ตรวจจับอาคาร' }}</span>
+        </button>
+      </div>
+    </div>
+
     <p v-if="!filteredDetections.length" class="empty">
       ยังไม่มีอาคาร detection ของเป้าหมายนี้
     </p>
@@ -62,12 +87,35 @@ export default {
     detections: { type: Array, default: () => [] },
     selectedTargetId: { type: String, default: '' },
     selectedCoordinateId: { type: String, default: '' },
+    detecting: { type: Boolean, default: false },
   },
-  emits: ['deleted', 'select-object', 'error'],
+  emits: ['deleted', 'select-object', 'error', 'run-detection'],
   setup(props, { emit }) {
     const deletingId = ref('')
     const selectedObjectId = ref('')
     const message = ref('')
+    const selectedRadiusM = ref(120)
+
+    function onRunDetection() {
+      message.value = 'กำลังจัดมุมกล้องและส่งตรวจจับอาคารด้วย building-seg.pt…'
+      emit('run-detection', {
+        radiusM: selectedRadiusM.value,
+        coordinateId: props.selectedCoordinateId,
+      })
+    }
+
+    watch(
+      () => props.detecting,
+      (isDetecting, wasDetecting) => {
+        if (wasDetecting && !isDetecting) {
+          if (filteredDetections.value.length > 0) {
+            message.value = `ตรวจจับสำเร็จ (พบ ${filteredDetections.value.length} อาคาร)`
+          } else {
+            message.value = 'ตรวจจับเสร็จสิ้น (ไม่พบอาคารในรัศมีนี้)'
+          }
+        }
+      },
+    )
 
     const filteredDetections = computed(() => {
       const list = props.detections || []
@@ -128,6 +176,8 @@ export default {
       riskLabel,
       selectObject,
       removeObject,
+      selectedRadiusM,
+      onRunDetection,
     }
   },
 }
@@ -259,5 +309,71 @@ export default {
 
 .delete-btn:disabled {
   opacity: 0.55;
+}
+
+.detect-action-wrap {
+  margin-bottom: 8px;
+}
+
+.detect-controls-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.radius-select-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #fbbf24;
+  font-size: 0.72rem;
+}
+
+.radius-select {
+  padding: 4px 6px;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  border-radius: 6px;
+  background: #0f172a;
+  color: #f1f5f9;
+  font-size: 0.72rem;
+  outline: none;
+}
+
+.run-detect-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  padding: 6px 10px;
+  border: 1px solid #d97706;
+  border-radius: 6px;
+  background: linear-gradient(135deg, #b45309, #d97706);
+  color: #fff;
+  font-size: 0.74rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.run-detect-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #d97706, #f59e0b);
+  border-color: #f59e0b;
+}
+
+.run-detect-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.spin {
+  display: inline-block;
+  animation: spin-kf 1s linear infinite;
+}
+
+@keyframes spin-kf {
+  100% {
+    transform: rotate(360deg);
+  }
 }
 </style>

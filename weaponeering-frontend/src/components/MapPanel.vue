@@ -660,15 +660,28 @@ export default {
       })
     }
 
-    async function runDetection() {
+    async function runDetection(customOptions = {}) {
       if (!props.scenarioId || !props.selectedTargetId) {
         emit('error', 'เลือก scenario และเป้าหมายก่อนรัน detection')
         return
       }
-      const target =
-        layerData.value.targets.find(
-          (t) => t.targetCardId === props.selectedTargetId && t.isPrimary,
-        ) || layerData.value.targets.find((t) => t.targetCardId === props.selectedTargetId)
+      const radiusVal = customOptions?.radiusM || detectionRadiusM.value
+      const zoomVal = customOptions?.zoom || detectionZoom.value
+      const modelVal = customOptions?.model || detectionModel.value
+      const targetCoordId = customOptions?.coordinateId || props.selectedCoordinateId
+
+      let target = null
+      if (targetCoordId) {
+        target = layerData.value.targets.find(
+          (t) => t.targetCardId === props.selectedTargetId && t.coordinateId === targetCoordId,
+        )
+      }
+      if (!target) {
+        target =
+          layerData.value.targets.find(
+            (t) => t.targetCardId === props.selectedTargetId && t.isPrimary,
+          ) || layerData.value.targets.find((t) => t.targetCardId === props.selectedTargetId)
+      }
       if (!target?.coordinateId) {
         emit('error', 'ไม่พบพิกัดของเป้าหมาย')
         return
@@ -682,22 +695,22 @@ export default {
       detectionMessage.value = 'กำลังจัดมุมกล้องรอบเป้าหมาย…'
       try {
         const captureRadius = detectionCaptureRadiusM(
-          detectionRadiusM.value,
-          detectionZoom.value,
+          radiusVal,
+          zoomVal,
         )
         api.setDetectionCaptureMode?.(true)
         api.fitToDetectionArea?.(target.lat, target.lng, captureRadius)
         detectionMessage.value = `รอโหลดภาพ (view ${captureRadius} ม.)…`
-        await new Promise((r) => setTimeout(r, 3200 + detectionZoom.value * 350))
-        detectionMessage.value = 'กำลังจับภาพและรัน YOLO…'
+        await new Promise((r) => setTimeout(r, 3200 + zoomVal * 350))
+        detectionMessage.value = 'กำลังจับภาพและรัน YOLO (building-seg.pt)…'
         const blob = await captureIframeSquareBlob()
         const form = new FormData()
         form.append('scenario_id', props.scenarioId)
         form.append('target_card_id', target.targetCardId)
         form.append('target_coordinate_id', target.coordinateId)
-        form.append('model_name', detectionModel.value)
-        form.append('radius_m', String(detectionRadiusM.value))
-        form.append('zoom_level', String(detectionZoom.value))
+        form.append('model_name', modelVal)
+        form.append('radius_m', String(radiusVal))
+        form.append('zoom_level', String(zoomVal))
         form.append('image', blob, `${target.targetCardId}.png`)
         const result = await uploadForm('/detection-runs/execute', form)
         detectionMessage.value =
@@ -707,11 +720,13 @@ export default {
         await reloadLayers()
         api.highlightTarget?.(target.targetCardId)
         emit('detection-complete', result)
+        return result
       } catch (err) {
         detectionMessage.value = err.message || 'Detection ล้มเหลว'
         emit('error', detectionMessage.value)
         getMapApi()?.setDetectionCaptureMode?.(false)
         getMapApi()?.restoreMapLayersAfterDetection?.()
+        throw err
       } finally {
         detecting.value = false
       }
@@ -1003,6 +1018,7 @@ export default {
       highlightIngress,
       highlightDetection,
       runDetection,
+      detecting,
       toggleExpanded,
       onFrameLoad,
       formatDistanceMeters,

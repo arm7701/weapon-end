@@ -8,6 +8,7 @@ from typing import Any
 
 MODEL_FILES = {
     "Building Detector": "building-seg.pt",
+    "building-seg.pt": "building-seg.pt",
     "Vehicle Detector": "vehicle-det.pt",
     "Structure Segmentation": "structure-seg.pt",
 }
@@ -245,6 +246,8 @@ class YoloDetectionService:
             self.project_root,
             self.project_root / "models",
             self.data_dir / "models",
+            Path.cwd(),
+            Path.cwd() / "models",
         ):
             resolved = candidate.resolve()
             if resolved not in roots:

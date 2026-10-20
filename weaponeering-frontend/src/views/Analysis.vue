@@ -49,6 +49,7 @@
             :selected-coordinate-id="selectedCoordinateId"
             :selected-wing-id="selectedWingId"
             :selected-transport-id="selectedTransportId"
+            :detecting="isDetecting"
             @toggle="mapSidebarCollapsed = !mapSidebarCollapsed"
             @select-target="onSelectTarget"
             @select-wing="onSelectWing"
@@ -59,6 +60,7 @@
             @detection-deleted="onDetectionDeleted"
             @select-detection="onSelectDetection"
             @detection-error="onMapError"
+            @run-detection="onRunDetectionFromDetail"
           />
           <div class="map-panel-wrap">
             <MapPanel
@@ -421,6 +423,28 @@ export default {
       mapPanelRef.value?.highlightDetection?.(item?.id)
     }
 
+    const isDetecting = ref(false)
+
+    const onRunDetectionFromDetail = async (options = {}) => {
+      if (!selectedTargetId.value) {
+        onMapError('กรุณาเลือกเป้าหมายก่อนทำการตรวจจับอาคาร')
+        return
+      }
+      isDetecting.value = true
+      try {
+        if (mapPanelRef.value?.runDetection) {
+          const res = await mapPanelRef.value.runDetection(options)
+          displayResetNotice(
+            res?.message || `ตรวจจับอาคารด้วย building-seg.pt สำเร็จ (พบ ${res?.objectCount || 0} อาคาร)`,
+          )
+        }
+      } catch (err) {
+        onMapError(err?.message || 'การตรวจจับอาคารล้มเหลว')
+      } finally {
+        isDetecting.value = false
+      }
+    }
+
     const onSelectTeam = (m) => {
       if (m.lat != null) currentLatitude.value = m.lat
       if (m.lng != null) currentLongitude.value = m.lng
@@ -571,6 +595,8 @@ export default {
       onViewIngress,
       onDetectionDeleted,
       onSelectDetection,
+      isDetecting,
+      onRunDetectionFromDetail,
       onSidebarFormChange,
       displayResetNotice,
     }
