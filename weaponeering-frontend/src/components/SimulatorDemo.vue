@@ -7,7 +7,7 @@
         <span class="simulator-title-icon"><i class="bi bi-bullseye"></i></span>
         <div>
           <strong>Mission Simulator</strong>
-          <small>ตรวจสอบวงรัศมีทำลายล้างแต่ละจุดเป้าหมาย · แสดงกล่อง 3D ตลอดเวลา</small>
+          <small>ตรวจสอบวงรัศมีทำลายล้างแต่ละจุดเป้าหมาย · แสดงกล่อง 3D และวงรอบข้างตลอดเวลา</small>
         </div>
       </div>
       <div class="simulator-status">
@@ -511,111 +511,144 @@ export default {
       }
     }
 
-    // วาดวงรัศมีและโดม 3D ของจุดเป้าหมายที่กำลังเลือกดู
+    // วาดวงรัศมีและโดม 3D ทั้งของจุดเป้าหมายที่เลือก และวงรัศมีของจุดเป้าหมายอื่นรอบข้าง (ไม่ซ่อนวงอื่น)
     function renderActivePointRadii(resetCamera = false) {
       if (!viewer || !radiusDataSource || !window.Cesium) return
       const Cesium = window.Cesium
-      const pt = activePoint.value
+      const activePt = activePoint.value
+      const points = targetPoints.value || []
 
-      if (!pt) {
+      if (!activePt && !points.length) {
         radiusDataSource.entities.removeAll()
         lastRadiusSignature = ''
         return
       }
 
       const sig = JSON.stringify({
-        key: pt.pointKey,
-        lat: pt.lat,
-        lng: pt.lng,
-        zones: pt.zones,
-        radiusM: pt.radiusM,
+        activeKey: activePt?.pointKey,
+        points: points.map((p) => ({
+          key: p.pointKey,
+          lat: p.lat,
+          lng: p.lng,
+          zones: p.zones,
+        })),
       })
       if (!resetCamera && sig === lastRadiusSignature) return
       lastRadiusSignature = sig
 
       radiusDataSource.entities.removeAll()
 
-      const centerCartesian = Cesium.Cartesian3.fromDegrees(pt.lng, pt.lat, 0)
+      // วาดทุกจุดเป้าหมาย: จุดที่กำลังดู (Active) จะเด่นชัดเป็นพิเศษ ส่วนจุดเป้าหมายอื่นรอบๆ จะแสดงวงรัศมีค้างไว้ตลอดไม่ซ่อน
+      for (const pt of points) {
+        const isActive = activePt && pt.pointKey === activePt.pointKey
+        const centerCartesian = Cesium.Cartesian3.fromDegrees(pt.lng, pt.lat, 0)
 
-      // จุดศูนย์กลางเป้าหมาย (Center Pin)
-      radiusDataSource.entities.add({
-        position: Cesium.Cartesian3.fromDegrees(pt.lng, pt.lat, 1.0),
-        point: {
-          pixelSize: 10,
-          color: Cesium.Color.fromCssColorString('#EF4444'),
-          outlineColor: Cesium.Color.WHITE,
-          outlineWidth: 2,
-          disableDepthTestDistance: Number.POSITIVE_INFINITY,
-        },
-        label: {
-          text: pt.label,
-          font: "700 11.5px 'IBM Plex Sans Thai', 'Inter', sans-serif",
-          fillColor: Cesium.Color.WHITE,
-          outlineColor: Cesium.Color.BLACK,
-          outlineWidth: 3,
-          style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-          verticalOrigin: Cesium.VerticalOrigin.TOP,
-          pixelOffset: new Cesium.Cartesian2(0, 10),
-          disableDepthTestDistance: Number.POSITIVE_INFINITY,
-        },
-      })
-
-      // วาดวงรัศมีแต่ละโซน (ทั้งวงรัศมีบนพื้น + ป้ายบอกระยะเป็นเมตร + โดมครึ่งทรงกลม 3D ขนาดจริงค้างไว้ให้ตรวจสอบ)
-      const zones = pt.zones || []
-      zones.forEach((zone, zIdx) => {
-        const r = Math.max(1, Number(zone.radiusM) || 10)
-        const cssColor = zone.color || '#FF6B35'
-        const cColor = Cesium.Color.fromCssColorString(cssColor)
-
-        // 1. เส้นวงรัศมีบนพื้นดิน (Ground Radius Ring)
+        // 1. จุดศูนย์กลางเป้าหมาย (Center Pin)
         radiusDataSource.entities.add({
-          polyline: {
-            positions: buildCirclePositions(Cesium, pt.lat, pt.lng, r, 0.4, 72),
-            width: 2.5,
-            material: cColor.withAlpha(0.95),
+          position: Cesium.Cartesian3.fromDegrees(pt.lng, pt.lat, 1.0),
+          point: {
+            pixelSize: isActive ? 10 : 7,
+            color: Cesium.Color.fromCssColorString(isActive ? '#EF4444' : '#F97316'),
+            outlineColor: Cesium.Color.WHITE,
+            outlineWidth: isActive ? 2 : 1.5,
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
           },
-        })
-
-        // 2. พื้นวงกลมโปร่งแสงบนพื้นดิน
-        radiusDataSource.entities.add({
-          position: centerCartesian,
-          ellipse: {
-            semiMajorAxis: r,
-            semiMinorAxis: r,
-            height: 0.2,
-            material: cColor.withAlpha(Math.max(0.05, 0.14 - zIdx * 0.025)),
-          },
-        })
-
-        // 3. โดมรัศมี 3D ครึ่งทรงกลม (ฝาชี 3D ขนาดเต็มจริง ไม่หด-ขยาย เพื่อให้ดูระยะเทียบกับกล่อง 3D ได้ชัดเจน)
-        radiusDataSource.entities.add({
-          position: centerCartesian,
-          ellipsoid: {
-            radii: new Cesium.Cartesian3(r, r, r),
-            maximumCone: Cesium.Math.PI_OVER_TWO,
-            material: cColor.withAlpha(Math.max(0.08, 0.18 - zIdx * 0.03)),
-            outline: true,
-            outlineColor: cColor.withAlpha(0.42),
-            slicePartitions: 24,
-            stackPartitions: 12,
-          },
-        })
-
-        // 4. ป้ายกำกับระยะรัศมีแต่ละวง (วางกระจายมุมเพื่อไม่ให้ทับกัน)
-        const labelAzimuth = 45 + zIdx * 28
-        radiusDataSource.entities.add({
-          position: pointAtAzimuth(Cesium, pt.lat, pt.lng, r, labelAzimuth, 1.5),
           label: {
-            text: `R${zIdx + 1}: ${r.toFixed(1)} ม.`,
-            font: "700 10.5px 'IBM Plex Sans Thai', 'Inter', monospace",
-            fillColor: cColor,
+            text: pt.label,
+            font: isActive
+              ? "700 11.5px 'IBM Plex Sans Thai', 'Inter', sans-serif"
+              : "600 10px 'IBM Plex Sans Thai', 'Inter', sans-serif",
+            fillColor: isActive ? Cesium.Color.WHITE : Cesium.Color.fromCssColorString('#E2E8F0'),
             outlineColor: Cesium.Color.BLACK,
             outlineWidth: 3,
             style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+            verticalOrigin: Cesium.VerticalOrigin.TOP,
+            pixelOffset: new Cesium.Cartesian2(0, isActive ? 10 : 8),
             disableDepthTestDistance: Number.POSITIVE_INFINITY,
           },
         })
-      })
+
+        // 2. วาดวงรัศมีแต่ละโซน
+        const zones = pt.zones || []
+        zones.forEach((zone, zIdx) => {
+          const r = Math.max(1, Number(zone.radiusM) || 10)
+          const cssColor = zone.color || '#FF6B35'
+          const cColor = Cesium.Color.fromCssColorString(cssColor)
+
+          // 2.1 เส้นวงรัศมีบนพื้นดิน (Ground Radius Ring)
+          radiusDataSource.entities.add({
+            polyline: {
+              positions: buildCirclePositions(Cesium, pt.lat, pt.lng, r, 0.4, 72),
+              width: isActive ? 2.5 : 1.8,
+              material: cColor.withAlpha(isActive ? 0.95 : 0.70),
+            },
+          })
+
+          // 2.2 พื้นวงกลมโปร่งแสงบนพื้นดิน
+          radiusDataSource.entities.add({
+            position: centerCartesian,
+            ellipse: {
+              semiMajorAxis: r,
+              semiMinorAxis: r,
+              height: 0.2,
+              material: cColor.withAlpha(
+                isActive
+                  ? Math.max(0.05, 0.14 - zIdx * 0.025)
+                  : Math.max(0.02, 0.06 - zIdx * 0.015),
+              ),
+            },
+          })
+
+          // 2.3 โดมรัศมี 3D ครึ่งทรงกลม
+          radiusDataSource.entities.add({
+            position: centerCartesian,
+            ellipsoid: {
+              radii: new Cesium.Cartesian3(r, r, r),
+              maximumCone: Cesium.Math.PI_OVER_TWO,
+              material: cColor.withAlpha(
+                isActive
+                  ? Math.max(0.08, 0.18 - zIdx * 0.03)
+                  : Math.max(0.02, 0.06 - zIdx * 0.015),
+              ),
+              outline: true,
+              outlineColor: cColor.withAlpha(isActive ? 0.42 : 0.22),
+              slicePartitions: 24,
+              stackPartitions: 12,
+            },
+          })
+
+          // 2.4 ป้ายกำกับระยะรัศมี
+          if (isActive) {
+            const labelAzimuth = 45 + zIdx * 28
+            radiusDataSource.entities.add({
+              position: pointAtAzimuth(Cesium, pt.lat, pt.lng, r, labelAzimuth, 1.5),
+              label: {
+                text: `R${zIdx + 1}: ${r.toFixed(1)} ม.`,
+                font: "700 10.5px 'IBM Plex Sans Thai', 'Inter', monospace",
+                fillColor: cColor,
+                outlineColor: Cesium.Color.BLACK,
+                outlineWidth: 3,
+                style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+                disableDepthTestDistance: Number.POSITIVE_INFINITY,
+              },
+            })
+          } else if (zIdx === zones.length - 1) {
+            // สำหรับจุดรอบข้าง แสดงระยะรัศมีนอกสุดกำกับไว้
+            radiusDataSource.entities.add({
+              position: pointAtAzimuth(Cesium, pt.lat, pt.lng, r, 45, 1.2),
+              label: {
+                text: `${r.toFixed(0)} ม.`,
+                font: "600 9.5px 'IBM Plex Sans Thai', 'Inter', monospace",
+                fillColor: cColor.withAlpha(0.85),
+                outlineColor: Cesium.Color.BLACK,
+                outlineWidth: 2.5,
+                style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+                disableDepthTestDistance: Number.POSITIVE_INFINITY,
+              },
+            })
+          }
+        })
+      }
 
       renderPersistent3DBoxes(true)
       updateOrbitCamera()
