@@ -37,11 +37,72 @@
         </div>
       </div>
 
-      <!-- Top-Left HUD: Target Point Selector & Active Point Info -->
-      <div v-if="activePoint" class="hud-badge hud-top-left">
-        <div class="hud-target-header">
-          <span>จุดเป้าหมาย {{ currentPointIndex + 1 }} / {{ targetPoints.length }}</span>
-          <div v-if="targetPoints.length > 1" class="hud-target-cycle-btns">
+      <!-- HUD Overlays inside 3D viewport (Shown ONLY when expanded full screen) -->
+      <template v-if="isExpanded">
+        <!-- Top-Left HUD: Target Point Selector & Active Point Info -->
+        <div v-if="activePoint" class="hud-badge hud-top-left">
+          <div class="hud-target-header">
+            <span>จุดเป้าหมาย {{ currentPointIndex + 1 }} / {{ targetPoints.length }}</span>
+            <div v-if="targetPoints.length > 1" class="hud-target-cycle-btns">
+              <button type="button" title="จุดเป้าหมายก่อนหน้า" @click.stop="stepPoint(-1)">
+                <i class="bi bi-chevron-left"></i>
+              </button>
+              <button type="button" title="จุดเป้าหมายถัดไป" @click.stop="stepPoint(1)">
+                <i class="bi bi-chevron-right"></i>
+              </button>
+            </div>
+          </div>
+
+          <select
+            v-if="targetPoints.length > 1"
+            class="hud-point-select"
+            :value="currentPointIndex"
+            @change="selectPointByIndex(Number($event.target.value))"
+          >
+            <option v-for="(pt, idx) in targetPoints" :key="pt.pointKey" :value="idx">
+              {{ idx + 1 }}. {{ pt.label }}
+            </option>
+          </select>
+          <strong v-else>{{ activePoint.label }}</strong>
+
+          <small class="hud-sub">
+            อาวุธ: {{ activePoint.effectProduct || 'ค่าเริ่มต้น (JMEM)' }}
+            <template v-if="activePoint.effectN"> · N={{ activePoint.effectN }}</template>
+          </small>
+        </div>
+
+        <!-- Bottom-Left HUD: Blast Radius Rings Breakdown for Active Target Point -->
+        <div v-if="activePoint && activePoint.zones.length" class="hud-badge hud-bottom-left">
+          <span>วงรัศมีจุดนี้ ({{ activePoint.zones.length }} ระยะ)</span>
+          <div class="hud-zone-pills">
+            <span
+              v-for="(z, idx) in activePoint.zones"
+              :key="idx"
+              class="hud-zone-pill"
+              :title="z.label"
+            >
+              <i class="zone-dot" :style="{ background: z.color }"></i>
+              {{ z.radiusM.toFixed(1) }} ม.
+            </span>
+          </div>
+        </div>
+
+        <!-- Bottom-Right HUD: 3D Box Status & Camera Heading (Without Duration) -->
+        <div class="hud-badge hud-bottom-right">
+          <span>3D BOX: {{ boxCount }} จุด · มุม {{ orbitDegrees }}°</span>
+        </div>
+      </template>
+    </div>
+
+    <!-- Non-expanded: Clean UI Bar Below 3D Stage -->
+    <div v-if="!isExpanded && activePoint" class="sim-details-bar">
+      <!-- Target Selector Row -->
+      <div class="sim-target-row">
+        <div class="sim-target-head">
+          <span class="sim-target-title">
+            <i class="bi bi-geo-alt-fill"></i> จุดเป้าหมาย {{ currentPointIndex + 1 }} / {{ targetPoints.length }}
+          </span>
+          <div v-if="targetPoints.length > 1" class="sim-target-nav">
             <button type="button" title="จุดเป้าหมายก่อนหน้า" @click.stop="stepPoint(-1)">
               <i class="bi bi-chevron-left"></i>
             </button>
@@ -53,7 +114,7 @@
 
         <select
           v-if="targetPoints.length > 1"
-          class="hud-point-select"
+          class="sim-point-select"
           :value="currentPointIndex"
           @change="selectPointByIndex(Number($event.target.value))"
         >
@@ -61,34 +122,28 @@
             {{ idx + 1 }}. {{ pt.label }}
           </option>
         </select>
-        <strong v-else>{{ activePoint.label }}</strong>
+        <strong v-else class="sim-point-name">{{ activePoint.label }}</strong>
 
-        <small class="hud-sub">
-          อาวุธ: {{ activePoint.effectProduct || 'ค่าเริ่มต้น (JMEM)' }}
-          <template v-if="activePoint.effectN"> · N={{ activePoint.effectN }}</template>
-        </small>
+        <div class="sim-weapon-info">
+          <span>อาวุธ: {{ activePoint.effectProduct || 'ค่าเริ่มต้น (JMEM)' }}<template v-if="activePoint.effectN"> · N={{ activePoint.effectN }}</template></span>
+          <span v-if="boxCount" class="sim-box-tag">3D BOX: {{ boxCount }} จุด</span>
+        </div>
       </div>
 
-      <!-- Bottom-Left HUD: Blast Radius Rings Breakdown for Active Target Point -->
-      <div v-if="activePoint && activePoint.zones.length" class="hud-badge hud-bottom-left">
-        <span>วงรัศมีจุดนี้ ({{ activePoint.zones.length }} ระยะ)</span>
-        <div class="hud-zone-pills">
+      <!-- Blast Radius Rings Row -->
+      <div v-if="activePoint.zones.length" class="sim-radius-row">
+        <span class="sim-radius-label">วงรัศมีจุดนี้ ({{ activePoint.zones.length }} ระยะ):</span>
+        <div class="sim-zone-pills">
           <span
             v-for="(z, idx) in activePoint.zones"
             :key="idx"
-            class="hud-zone-pill"
+            class="sim-zone-pill"
             :title="z.label"
           >
             <i class="zone-dot" :style="{ background: z.color }"></i>
             {{ z.radiusM.toFixed(1) }} ม.
           </span>
         </div>
-      </div>
-
-      <!-- Bottom-Right HUD: 3D Box Status & Camera Heading -->
-      <div class="hud-badge hud-bottom-right">
-        <span>3D BOX: {{ boxCount }} จุด · มุม {{ orbitDegrees }}°</span>
-        <strong>{{ formattedTime }}</strong>
       </div>
     </div>
 
@@ -97,53 +152,27 @@
         type="button"
         class="control-button primary"
         :class="{ active: isPlaying }"
-        title="หมุนดูวงรัศมีแต่ละจุดเป้าหมายอัตโนมัติ"
-        aria-label="หมุนดูวงรัศมีแต่ละจุดเป้าหมายอัตโนมัติ"
+        title="เล่น (หมุนดูวงรัศมีแต่ละจุดเป้าหมายอัตโนมัติ)"
+        aria-label="เล่น"
         :disabled="isPlaying"
         @click="startPlayback"
       >
         <i class="bi bi-play-fill"></i>
-      </button>
-      <button
-        type="button"
-        class="control-button pause"
-        :class="{ active: isPaused }"
-        title="หยุดหมุนชั่วคราวเพื่อดูวงรัศมีจุดปัจจุบัน"
-        aria-label="หยุดหมุนชั่วคราว"
-        :disabled="!isPlaying"
-        @click="pausePlayback"
-      >
-        <i class="bi bi-pause-fill"></i>
+        <span>Play</span>
       </button>
       <button
         type="button"
         class="control-button stop"
-        :class="{ active: !isPlaying && !isPaused }"
-        title="หยุดและรีเซ็ตมุมกล้อง"
-        aria-label="หยุดและรีเซ็ตมุมกล้อง"
+        :class="{ active: !isPlaying }"
+        title="หยุด"
+        aria-label="หยุด"
+        :disabled="!isPlaying"
         @click="stopPlayback"
       >
         <i class="bi bi-stop-fill"></i>
+        <span>หยุด</span>
       </button>
-      <button
-        type="button"
-        class="control-button"
-        title="กลับไปจุดเป้าหมายแรก"
-        aria-label="กลับไปจุดเป้าหมายแรก"
-        @click="restart"
-      >
-        <i class="bi bi-arrow-counterclockwise"></i>
-      </button>
-      <button
-        type="button"
-        class="control-button capture"
-        title="แคปเจอร์หน้าจอวงรัศมีและกล่อง 3D"
-        aria-label="แคปเจอร์หน้าจอ Simulator"
-        @click="captureScreen"
-      >
-        <i class="bi bi-camera-fill"></i>
-      </button>
-      <span class="control-hint">ESC เพื่อปิดหน้าจอขยาย</span>
+      <span v-if="isExpanded" class="control-hint">ESC เพื่อปิดหน้าจอขยาย</span>
     </footer>
   </section>
 </template>
@@ -730,11 +759,6 @@ export default {
     const stopPlayback = () => {
       isPlaying.value = false
       isPaused.value = false
-      elapsed.value = 0
-      pointDwellElapsed = 0
-      orbitHeadingRad.value = 0
-      currentPointIndex.value = 0
-      renderActivePointRadii(true)
     }
 
     const restart = () => {
@@ -913,7 +937,117 @@ export default {
 .hud-zone-pill { display: inline-flex; align-items: center; gap: 4px; color: #dbeafe; font: 600 0.58rem 'IBM Plex Sans Thai', 'Inter', monospace; }
 .zone-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; }
 .hud-bottom-right { right: 8px; bottom: 8px; text-align: right; }
-.simulator-controls { display: flex; align-items: center; gap: 7px; padding: 9px 10px; border-top: 1px solid #294765; background: #091725; }
+
+.sim-details-bar {
+  padding: 8px 10px;
+  background: #091725;
+  border-top: 1px solid #1e3a5f;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.sim-target-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.sim-target-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.sim-target-title {
+  color: #7dd3fc;
+  font: 600 0.64rem 'IBM Plex Sans Thai', 'Inter', monospace;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.sim-target-nav {
+  display: inline-flex;
+  gap: 3px;
+}
+.sim-target-nav button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid rgba(110, 168, 254, 0.35);
+  border-radius: 4px;
+  background: rgba(13, 110, 253, 0.18);
+  color: #cfe2ff;
+  font-size: 0.62rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.sim-target-nav button:hover {
+  background: #0d6efd;
+  color: #fff;
+}
+.sim-point-select {
+  width: 100%;
+  padding: 4px 8px;
+  border: 1px solid rgba(110, 168, 254, 0.35);
+  border-radius: 5px;
+  background: rgba(9, 25, 45, 0.95);
+  color: #e2f0ff;
+  font: 600 0.7rem 'IBM Plex Sans Thai', 'Inter', sans-serif;
+  outline: none;
+  cursor: pointer;
+}
+.sim-point-name {
+  color: #e2f0ff;
+  font: 600 0.72rem 'IBM Plex Sans Thai', 'Inter', sans-serif;
+  padding: 2px 0;
+}
+.sim-weapon-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  color: #9ec5fe;
+  font-size: 0.62rem;
+}
+.sim-box-tag {
+  display: inline-block;
+  padding: 1px 5px;
+  background: rgba(56, 189, 248, 0.15);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  border-radius: 4px;
+  color: #7dd3fc;
+  font: 600 0.58rem monospace;
+}
+.sim-radius-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 4px;
+  border-top: 1px dashed rgba(53, 85, 116, 0.4);
+}
+.sim-radius-label {
+  color: #94a3b8;
+  font: 600 0.6rem 'IBM Plex Sans Thai', 'Inter', monospace;
+}
+.sim-zone-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.sim-zone-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 4px;
+  color: #f1f5f9;
+  font: 600 0.62rem 'IBM Plex Sans Thai', 'Inter', monospace;
+}
+
+.simulator-controls { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-top: 1px solid #1e3a5f; background: #06111f; }
 
 :global(body.light-theme .simulator-window) { border-color: #b7cadc; background: #ffffff; box-shadow: 0 7px 20px rgba(31, 65, 98, 0.13); }
 :global(body.light-theme .simulator-header) { border-bottom-color: #c7d6e4; background: linear-gradient(90deg, #ffffff, #eaf2fa); }
@@ -921,20 +1055,45 @@ export default {
 :global(body.light-theme .simulator-title small),
 :global(body.light-theme .simulator-status) { color: #637b91; }
 :global(body.light-theme .simulator-icon-button) { border-color: #b9cad9; background: #ffffff; color: #315f88; }
-:global(body.light-theme .simulator-controls) { border-top-color: #c7d6e4; background: #f3f7fb; }
-.control-button { display: inline-flex; flex: 0 0 32px; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0; border: 1px solid #355574; border-radius: 7px; background: #102236; color: #c4d7ea; font-family: inherit; font-size: 0.82rem; }
-.control-button:hover { border-color: #5e92cc; background: #173451; color: white; }
+:global(body.light-theme .sim-details-bar) { background: #f8fafc; border-top-color: #cbd5e1; }
+:global(body.light-theme .sim-target-title) { color: #0284c7; }
+:global(body.light-theme .sim-point-select) { background: #ffffff; border-color: #94a3b8; color: #0f172a; }
+:global(body.light-theme .sim-point-name) { color: #0f172a; }
+:global(body.light-theme .sim-weapon-info) { color: #475569; }
+:global(body.light-theme .sim-radius-row) { border-top-color: #e2e8f0; }
+:global(body.light-theme .sim-radius-label) { color: #64748b; }
+:global(body.light-theme .sim-zone-pill) { background: #f1f5f9; border-color: #cbd5e1; color: #1e293b; }
+:global(body.light-theme .simulator-controls) { border-top-color: #cbd5e1; background: #f1f5f9; }
+
+.control-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 14px;
+  border: 1px solid #355574;
+  border-radius: 6px;
+  background: #102236;
+  color: #c4d7ea;
+  font-family: inherit;
+  font-size: 0.74rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.control-button:hover:not(:disabled) { border-color: #5e92cc; background: #173451; color: white; }
 .control-button.primary { border-color: #0d6efd; background: #0d6efd; color: white; }
-.control-button.pause { border-color: #a77c27; color: #f1c75b; }
-.control-button.pause:hover:not(:disabled),
-.control-button.pause.active { background: #a97918; color: #ffffff; }
+.control-button.primary:hover:not(:disabled) { background: #0b5ed7; border-color: #0a58ca; }
 .control-button.stop { border-color: #a04a53; color: #ff7e87; }
 .control-button.stop:hover:not(:disabled) { background: #b63844; color: #ffffff; }
-.control-button:disabled { cursor: default; opacity: 0.42; }
-.control-button.active:disabled { opacity: 1; }
-.control-button.active { box-shadow: 0 0 0 2px rgba(110, 168, 254, 0.15); }
-.control-button.stop.active { background: #b63844; color: #ffffff; }
-.control-button.capture { margin-left: auto; border-color: #268d67; color: #6ed7ad; }
-.control-hint { color: #617890; font-size: 0.58rem; }
+.control-button.stop.active { background: #b63844; color: #ffffff; border-color: #dc3545; }
+.control-button:disabled { cursor: not-allowed; opacity: 0.5; }
+:global(body.light-theme .control-button) { background: #ffffff; border-color: #cbd5e1; color: #334155; }
+:global(body.light-theme .control-button.primary) { background: #0d6efd; border-color: #0d6efd; color: #ffffff; }
+:global(body.light-theme .control-button.stop) { border-color: #fca5a5; color: #dc2626; }
+:global(body.light-theme .control-button.stop.active) { background: #dc2626; color: #ffffff; }
+
+.control-hint { margin-left: auto; color: #617890; font-size: 0.58rem; }
 @media (max-width: 600px) { .simulator-window.expanded { inset: 8px; } .control-hint { display: none; } }
 </style>
