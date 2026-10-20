@@ -83,6 +83,8 @@
         :detections="detections"
         :selected-target-id="selectedTargetId"
         :selected-coordinate-id="selectedCoordinateId"
+        :target-lat="selectedTargetMarker?.lat"
+        :target-lng="selectedTargetMarker?.lng"
         :detecting="detecting"
         @deleted="$emit('detection-deleted', $event)"
         @select-object="$emit('select-detection', $event)"
@@ -176,7 +178,22 @@ export default {
       return null
     })
 
-    return { tab, targetDialogOpen, uniqueTargetCount, selectedSummary }
+    const selectedTargetMarker = computed(() => {
+      if (!props.selectedTargetId) return null
+      if (props.selectedCoordinateId) {
+        const exact = props.targets.find(
+          (t) =>
+            t.targetCardId === props.selectedTargetId &&
+            t.coordinateId === props.selectedCoordinateId,
+        )
+        if (exact) return exact
+      }
+      return (
+        props.targets.find((t) => t.targetCardId === props.selectedTargetId) || null
+      )
+    })
+
+    return { tab, targetDialogOpen, uniqueTargetCount, selectedSummary, selectedTargetMarker }
   },
 }
 </script>

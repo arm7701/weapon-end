@@ -37,33 +37,44 @@
       ยังไม่มีอาคาร detection ของเป้าหมายนี้
     </p>
 
-    <div v-else class="object-list">
-      <div
-        v-for="item in filteredDetections"
-        :key="item.id"
-        class="object-row"
-        :class="{ active: selectedObjectId === item.id }"
-        @click="selectObject(item)"
-      >
-        <span class="risk-dot" :class="item.risk || 'low'"></span>
-        <span class="object-copy">
-          <strong>{{ item.label || item.objectType || 'Building' }}</strong>
-          <small>
-            {{ riskLabel(item.risk) }}
-            <template v-if="item.confidence != null">
-              · {{ Math.round(Number(item.confidence) * 100) }}%
-            </template>
-          </small>
-        </span>
-        <button
-          type="button"
-          class="delete-btn"
-          title="ลบอาคารนี้"
-          :disabled="deletingId === item.id"
-          @click.stop="removeObject(item)"
+    <div v-else>
+      <p v-if="hasNearbyCarryover" class="carryover-note">
+        <i class="bi bi-info-circle"></i> ตรวจพบอาคารในรัศมี (คำนวณระดับความเสี่ยงตามระยะจุดนี้แล้ว)
+      </p>
+      <div class="object-list">
+        <div
+          v-for="item in filteredDetections"
+          :key="item.id"
+          class="object-row"
+          :class="{ active: selectedObjectId === item.id }"
+          @click="selectObject(item)"
         >
-          <i class="bi" :class="deletingId === item.id ? 'bi-hourglass-split' : 'bi-trash'"></i>
-        </button>
+          <span class="risk-dot" :class="item.risk || 'low'"></span>
+          <span class="object-copy">
+            <strong>{{ item.label || item.objectType || 'Building' }}</strong>
+            <small>
+              {{ riskLabel(item.risk) }}
+              <template v-if="item.distanceM != null">
+                · {{ item.distanceM }} ม.
+              </template>
+              <template v-if="item.confidence != null">
+                · {{ Math.round(Number(item.confidence) * 100) }}%
+              </template>
+              <template v-if="item.isNearbyCarryover">
+                · <span class="nearby-tag">ในรัศมี</span>
+              </template>
+            </small>
+          </span>
+          <button
+            type="button"
+            class="delete-btn"
+            title="ลบอาคารนี้"
+            :disabled="deletingId === item.id"
+            @click.stop="removeObject(item)"
+          >
+            <i class="bi" :class="deletingId === item.id ? 'bi-hourglass-split' : 'bi-trash'"></i>
+          </button>
+        </div>
       </div>
     </div>
 
@@ -87,6 +98,8 @@ export default {
     detections: { type: Array, default: () => [] },
     selectedTargetId: { type: String, default: '' },
     selectedCoordinateId: { type: String, default: '' },
+    targetLat: { type: Number, default: null },
+    targetLng: { type: Number, default: null },
     detecting: { type: Boolean, default: false },
   },
   emits: ['deleted', 'select-object', 'error', 'run-detection'],
@@ -95,6 +108,19 @@ export default {
     const selectedObjectId = ref('')
     const message = ref('')
     const selectedRadiusM = ref(120)
+
+    function distanceM(lat1, lng1, lat2, lng2) {
+      const meanLat = ((lat1 + lat2) / 2) * (Math.PI / 180)
+      const dLat = (lat2 - lat1) * 111320
+      const dLng = (lng2 - lng1) * 111320 * Math.max(Math.cos(meanLat), 0.1)
+      return Math.hypot(dLat, dLng)
+    }
+
+    function calculateRiskForDistance(dist, radiusM) {
+      if (dist <= radiusM * 0.35) return 'high'
+      if (dist <= radiusM * 0.70) return 'medium'
+      return 'low'
+    }
 
     function onRunDetection() {
       message.value = 'กำลังจัดมุมกล้องและส่งตรวจจับอาคารด้วย building-seg.pt…'
@@ -127,8 +153,56 @@ export default {
         )
         if (scoped.length) rows = scoped
       }
-      return rows
+
+      if (rows.length > 0) {
+        return rows.map((item) => {
+          if (
+            props.targetLat != null &&
+            props.targetLng != null &&
+            item.lat != null &&
+            item.lng != null
+          ) {
+            const dist = distanceM(props.targetLat, props.targetLng, item.lat, item.lng)
+            const risk = calculateRiskForDistance(dist, selectedRadiusM.value)
+            return {
+              ...item,
+              risk,
+              distanceM: Math.round(dist),
+            }
+          }
+          return item
+        })
+      }
+
+      // If no detections directly registered for this target, but target coordinates exist:
+      // Find all detected objects in scenario within selectedRadiusM
+      if (props.targetLat != null && props.targetLng != null) {
+        const nearby = []
+        const seen = new Set()
+        for (const item of list) {
+          if (item.lat == null || item.lng == null) continue
+          const key = `${item.lat.toFixed(6)},${item.lng.toFixed(6)}`
+          if (seen.has(key)) continue
+          seen.add(key)
+          const dist = distanceM(props.targetLat, props.targetLng, item.lat, item.lng)
+          if (dist <= selectedRadiusM.value) {
+            const risk = calculateRiskForDistance(dist, selectedRadiusM.value)
+            nearby.push({
+              ...item,
+              risk,
+              distanceM: Math.round(dist),
+              isNearbyCarryover: true,
+            })
+          }
+        }
+        return nearby
+      }
+      return []
     })
+
+    const hasNearbyCarryover = computed(() =>
+      filteredDetections.value.some((d) => d.isNearbyCarryover),
+    )
 
     function riskLabel(risk) {
       return RISK_LABELS[risk] || risk || '—'
@@ -170,6 +244,7 @@ export default {
 
     return {
       filteredDetections,
+      hasNearbyCarryover,
       deletingId,
       selectedObjectId,
       message,
@@ -369,6 +444,30 @@ export default {
 .spin {
   display: inline-block;
   animation: spin-kf 1s linear infinite;
+}
+
+.carryover-note {
+  margin: 0 0 8px;
+  padding: 5px 8px;
+  background: rgba(30, 58, 138, 0.35);
+  border: 1px solid rgba(59, 130, 246, 0.4);
+  border-radius: 6px;
+  font-size: 0.69rem;
+  color: #93c5fd;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.nearby-tag {
+  display: inline-block;
+  padding: 1px 4px;
+  background: rgba(59, 130, 246, 0.25);
+  border: 1px solid rgba(59, 130, 246, 0.5);
+  border-radius: 3px;
+  color: #bfdbfe;
+  font-size: 0.62rem;
+  font-weight: 600;
 }
 
 @keyframes spin-kf {

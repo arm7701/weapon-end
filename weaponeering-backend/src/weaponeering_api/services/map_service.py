@@ -106,38 +106,72 @@ async def _attach_risk_directions(
     """Attach lowestRiskDirection (entry/exit approach) to target markers with detections."""
     from weaponeering_api.services.detection_inference import build_risk_direction_payload
 
+    from maap_app.modules.detection.service import YoloDetectionService
+
     result = await db.execute(
         select(TargetMapDetectionRun)
         .options(selectinload(TargetMapDetectionRun.objects))
         .where(TargetMapDetectionRun.scenario_id == scenario_id)
     )
+    all_runs = list(result.scalars().all())
     runs_by_coord: dict[tuple[str, str], TargetMapDetectionRun] = {}
-    for run in result.scalars().all():
+    for run in all_runs:
         key = (str(run.target_card_id), str(run.target_coordinate_id))
         runs_by_coord[key] = run
 
     for marker in targets:
         key = (marker["targetCardId"], marker["coordinateId"])
         run = runs_by_coord.get(key)
-        if run is None or not run.objects:
-            continue
-        objects = [
-            {
-                "lat": obj.center_lat,
-                "lng": obj.center_lng,
-                "risk": obj.risk_level,
-                "label": obj.object_label,
-            }
-            for obj in run.objects
-        ]
-        marker["lowestRiskDirection"] = build_risk_direction_payload(
-            lat=marker["lat"],
-            lng=marker["lng"],
-            objects=objects,
-            scan_radius_m=float(run.radius_m),
-        )
-        marker["detectionRadiusM"] = run.radius_m
-        marker["detectionObjectCount"] = run.object_count
+        if run is not None and run.objects:
+            objects = [
+                {
+                    "lat": obj.center_lat,
+                    "lng": obj.center_lng,
+                    "risk": obj.risk_level,
+                    "label": obj.object_label,
+                }
+                for obj in run.objects
+            ]
+            marker["lowestRiskDirection"] = build_risk_direction_payload(
+                lat=marker["lat"],
+                lng=marker["lng"],
+                objects=objects,
+                scan_radius_m=float(run.radius_m),
+            )
+            marker["detectionRadiusM"] = run.radius_m
+            marker["detectionObjectCount"] = run.object_count
+        else:
+            nearby_objects = []
+            default_radius = 120.0
+            seen_coords = set()
+            for r in all_runs:
+                for obj in r.objects:
+                    coord_key = (round(obj.center_lat, 6), round(obj.center_lng, 6))
+                    if coord_key in seen_coords:
+                        continue
+                    seen_coords.add(coord_key)
+                    dist = YoloDetectionService._distance_m(
+                        marker["lat"], marker["lng"], obj.center_lat, obj.center_lng
+                    )
+                    if dist <= default_radius:
+                        risk = YoloDetectionService._risk_for_distance(dist, int(default_radius))
+                        nearby_objects.append(
+                            {
+                                "lat": obj.center_lat,
+                                "lng": obj.center_lng,
+                                "risk": risk,
+                                "label": obj.object_label,
+                            }
+                        )
+            if nearby_objects:
+                marker["lowestRiskDirection"] = build_risk_direction_payload(
+                    lat=marker["lat"],
+                    lng=marker["lng"],
+                    objects=nearby_objects,
+                    scan_radius_m=default_radius,
+                )
+                marker["detectionRadiusM"] = int(default_radius)
+                marker["detectionObjectCount"] = len(nearby_objects)
 
 
 async def _target_markers(db: AsyncSession, scenario_id: uuid.UUID) -> list[dict]:

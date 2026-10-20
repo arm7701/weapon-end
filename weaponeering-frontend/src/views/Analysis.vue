@@ -80,7 +80,7 @@
               @select-team="onSelectTeam"
               @coords-picked="onCoordsPicked"
               @layers-loaded="onLayersLoaded"
-              @target-created="() => displayResetNotice('สร้างเป้าหมายบนแผนที่แล้ว')"
+              @target-created="onTargetCreated"
               @targets-imported="(r) => displayResetNotice(`นำเข้าเป้าหมาย ${r?.successCount || 0} รายการแล้ว`)"
               @team-created="() => displayResetNotice('วางหน่วยบนแผนที่แล้ว')"
               @detection-complete="(r) => displayResetNotice(r?.message || 'Detection เสร็จแล้ว')"
@@ -358,6 +358,13 @@ export default {
       loadTargetIntoPanels(t)
     }
 
+    const onTargetCreated = (payload) => {
+      displayResetNotice(`สร้างเป้าหมายสำเร็จ: ${payload?.label || ''}`)
+      if (payload?.targetCardId) {
+        onSelectTarget(payload)
+      }
+    }
+
     const onSelectWing = (w) => {
       selectedWingId.value = w.entityId || ''
       selectedTargetId.value = ''
@@ -584,6 +591,7 @@ export default {
       resetTargetData,
       refreshData,
       onSelectTarget,
+      onTargetCreated,
       onSelectWing,
       onSelectDepot,
       onSelectTransport,

@@ -786,13 +786,25 @@ export default {
               `เป้าหมาย ${layerData.value.targets.length + 1}`,
             )
             if (!label) return
-            await createResource('/targets', {
+            const created = await createResource('/targets', {
               scenario_id: props.scenarioId,
               label,
               coordinates: [{ label: 'P1', map_lat: lat, map_lng: lng, is_primary: true }],
             })
-            emit('target-created', { lat, lng })
             await reloadLayers()
+            const coordId = created?.coordinates?.[0]?.id || ''
+            const targetPayload = {
+              targetCardId: created?.id || '',
+              coordinateId: coordId,
+              lat,
+              lng,
+              label: created?.label || label,
+            }
+            emit('target-created', targetPayload)
+            emit('select-target', targetPayload)
+            if (created?.id) {
+              getMapApi()?.highlightTarget?.(created.id)
+            }
             setMode('select')
           } catch (err) {
             emit('error', err.message || 'สร้างเป้าหมายไม่สำเร็จ')

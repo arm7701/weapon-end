@@ -185,6 +185,52 @@ async def execute_detection_run(
         zoom_level=zoom_level,
     )
 
+    # Check for existing scenario detections within radius_m of the new coordinate
+    # (e.g. when placing a new point near a previous circle)
+    existing_runs = await detection_service.list_detection_runs(
+        db, scenario_id=scenario_id
+    )
+    for er in existing_runs:
+        if er.target_card_id == target_card_id and er.target_coordinate_id == target_coordinate_id:
+            continue
+        for obj in er.objects:
+            obj_lat = float(obj.center_lat)
+            obj_lng = float(obj.center_lng)
+            dist_to_new_target = YoloDetectionService._distance_m(
+                coord.map_lat, coord.map_lng, obj_lat, obj_lng
+            )
+            if dist_to_new_target <= radius_m:
+                duplicate = any(
+                    YoloDetectionService._distance_m(
+                        float(o["lat"]), float(o["lng"]), obj_lat, obj_lng
+                    ) < 8.0
+                    for o in objects
+                )
+                if not duplicate:
+                    objects.append(
+                        {
+                            "id": f"carryover-{obj.id}",
+                            "label": obj.object_label,
+                            "objectType": obj.object_type,
+                            "confidence": float(obj.confidence or 0.8),
+                            "lat": obj_lat,
+                            "lng": obj_lng,
+                            "polygon": obj.polygon_json if isinstance(obj.polygon_json, list) else [],
+                        }
+                    )
+
+    # Recalculate distance and damage risk relative to the new target coordinate for ALL objects
+    for obj in objects:
+        dist = YoloDetectionService._distance_m(
+            coord.map_lat, coord.map_lng, float(obj["lat"]), float(obj["lng"])
+        )
+        calculated_risk = YoloDetectionService._risk_for_distance(dist, radius_m)
+        obj["risk"] = calculated_risk
+        obj["risk_level"] = calculated_risk
+        obj["distance_m"] = round(dist, 1)
+
+    message = f"พบ {len(objects)} อาคารในรัศมี {radius_m} ม. (คำนวณระดับความเสี่ยงตามระยะจุดเป้าหมายใหม่แล้ว)"
+
     body = DetectionRunUpsert(
         scenario_id=scenario_id,
         target_card_id=target_card_id,
@@ -225,6 +271,10 @@ async def risk_direction_for_coordinate(
     target_card_id: uuid.UUID,
     target_coordinate_id: uuid.UUID,
 ) -> dict:
+    target = await db.get(TargetCard, target_card_id)
+    if target is None:
+        raise ValueError("ไม่พบ Target")
+
     coord = await db.get(TargetCoordinate, target_coordinate_id)
     if coord is None or coord.target_card_id != target_card_id:
         raise ValueError("ไม่พบพิกัดของเป้าหมาย")
@@ -234,17 +284,44 @@ async def risk_direction_for_coordinate(
     )
     objects = []
     radius_m = 120.0
-    if run is not None:
+    if run is not None and run.objects:
         radius_m = float(run.radius_m)
         for obj in run.objects:
+            dist = YoloDetectionService._distance_m(
+                coord.map_lat, coord.map_lng, float(obj.center_lat), float(obj.center_lng)
+            )
             objects.append(
                 {
                     "lat": obj.center_lat,
                     "lng": obj.center_lng,
-                    "risk": obj.risk_level,
+                    "risk": YoloDetectionService._risk_for_distance(dist, int(radius_m)),
                     "label": obj.object_label,
                 }
             )
+    else:
+        # Fallback for targets near existing scenario detections
+        all_runs = await detection_service.list_detection_runs(
+            db, scenario_id=target.scenario_id
+        )
+        seen = set()
+        for r in all_runs:
+            for obj in r.objects:
+                key = (round(obj.center_lat, 6), round(obj.center_lng, 6))
+                if key in seen:
+                    continue
+                seen.add(key)
+                dist = YoloDetectionService._distance_m(
+                    coord.map_lat, coord.map_lng, float(obj.center_lat), float(obj.center_lng)
+                )
+                if dist <= radius_m:
+                    objects.append(
+                        {
+                            "lat": obj.center_lat,
+                            "lng": obj.center_lng,
+                            "risk": YoloDetectionService._risk_for_distance(dist, int(radius_m)),
+                            "label": obj.object_label,
+                        }
+                    )
     return build_risk_direction_payload(
         lat=coord.map_lat,
         lng=coord.map_lng,
