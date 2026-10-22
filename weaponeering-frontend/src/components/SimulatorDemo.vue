@@ -172,6 +172,17 @@
         <i class="bi bi-stop-fill"></i>
         <span>หยุด</span>
       </button>
+      <button
+        type="button"
+        class="control-button camera"
+        :class="{ captured: isCaptured }"
+        :title="isCaptured ? 'บันทึกภาพหน้าจอเรียบร้อย' : 'แคปหน้าจอ Mission Sim'"
+        aria-label="แคปหน้าจอ Mission Sim"
+        @click="captureScreen"
+      >
+        <i class="bi" :class="isCaptured ? 'bi-check-lg' : 'bi-camera'"></i>
+        <span>{{ isCaptured ? 'บันทึกแล้ว' : 'แคปหน้าจอ' }}</span>
+      </button>
       <span v-if="isExpanded" class="control-hint">ESC เพื่อปิดหน้าจอขยาย</span>
     </footer>
   </section>
@@ -772,6 +783,7 @@ export default {
       renderActivePointRadii(true)
     }
 
+    const isCaptured = ref(false)
     const captureScreen = () => {
       if (!cesiumMount.value) return
       try {
@@ -779,9 +791,13 @@ export default {
         const glCanvas = cesiumMount.value.querySelector('canvas')
         if (!glCanvas) return
         const link = document.createElement('a')
-        link.download = `simulator-radius-${new Date().toISOString().replace(/[:.]/g, '-')}.png`
+        link.download = `mission-sim-${new Date().toISOString().replace(/[:.]/g, '-')}.png`
         link.href = glCanvas.toDataURL('image/png')
         link.click()
+        isCaptured.value = true
+        setTimeout(() => {
+          isCaptured.value = false
+        }, 1500)
       } catch (err) {
         console.warn('Capture failed:', err)
       }
@@ -893,6 +909,7 @@ export default {
       stopPlayback,
       restart,
       captureScreen,
+      isCaptured,
       toggleExpanded,
     }
   },
@@ -1088,11 +1105,41 @@ export default {
 .control-button.stop { border-color: #a04a53; color: #ff7e87; }
 .control-button.stop:hover:not(:disabled) { background: #b63844; color: #ffffff; }
 .control-button.stop.active { background: #b63844; color: #ffffff; border-color: #dc3545; }
+.control-button.camera {
+  border-color: #2e557b;
+  color: #79b8ff;
+  background: #0d2137;
+}
+.control-button.camera:hover:not(:disabled) {
+  border-color: #5e92cc;
+  background: #173b67;
+  color: #ffffff;
+}
+.control-button.camera.captured {
+  border-color: #198754;
+  background: #198754;
+  color: #ffffff;
+}
 .control-button:disabled { cursor: not-allowed; opacity: 0.5; }
 :global(body.light-theme .control-button) { background: #ffffff; border-color: #cbd5e1; color: #334155; }
 :global(body.light-theme .control-button.primary) { background: #0d6efd; border-color: #0d6efd; color: #ffffff; }
 :global(body.light-theme .control-button.stop) { border-color: #fca5a5; color: #dc2626; }
 :global(body.light-theme .control-button.stop.active) { background: #dc2626; color: #ffffff; }
+:global(body.light-theme .control-button.camera) {
+  background: #f0f7ff;
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+}
+:global(body.light-theme .control-button.camera:hover:not(:disabled)) {
+  background: #dbeafe;
+  border-color: #93c5fd;
+  color: #1e40af;
+}
+:global(body.light-theme .control-button.camera.captured) {
+  background: #16a34a;
+  border-color: #16a34a;
+  color: #ffffff;
+}
 
 .control-hint { margin-left: auto; color: #617890; font-size: 0.58rem; }
 @media (max-width: 600px) { .simulator-window.expanded { inset: 8px; } .control-hint { display: none; } }

@@ -195,10 +195,13 @@ export default {
   border: 1px solid rgba(56, 189, 248, 0.28);
   border-radius: 10px;
   background: rgba(8, 47, 73, 0.28);
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .risk-head {
   margin-bottom: 8px;
+  min-width: 0;
 }
 
 .kicker {
@@ -214,6 +217,8 @@ export default {
   align-items: center;
   gap: 6px;
   font-size: 0.82rem;
+  line-height: 1.35;
+  word-break: break-word;
 }
 
 .risk-option {
@@ -225,6 +230,8 @@ export default {
   border: 1px solid #2c445d;
   border-radius: 8px;
   background: rgba(15, 34, 54, 0.7);
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .risk-option.active {
@@ -235,18 +242,24 @@ export default {
 .option-row {
   display: flex;
   align-items: flex-start;
+  justify-content: space-between;
   gap: 8px;
+  min-width: 0;
+  width: 100%;
 }
 
 .option-copy {
   min-width: 0;
   flex: 1 1 auto;
+  overflow: hidden;
 }
 
 .option-copy strong {
   display: block;
   font-size: 0.74rem;
   line-height: 1.35;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .option-copy small,
@@ -256,11 +269,14 @@ export default {
 .empty {
   color: #9ec5d8;
   font-size: 0.68rem;
+  line-height: 1.45;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .border-line {
   margin: 0;
-  line-height: 1.35;
+  padding-top: 2px;
 }
 
 .view-btn {
@@ -274,6 +290,8 @@ export default {
   font-family: inherit;
   font-size: 0.68rem;
   font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
 }
 
 .risk-option.active .view-btn {

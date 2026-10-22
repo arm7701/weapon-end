@@ -9,28 +9,30 @@
     </header>
 
     <div class="detect-action-wrap">
-      <div class="detect-controls-row">
-        <label class="radius-select-label" title="รัศมีการตรวจจับรอบเป้าหมาย (ม.)">
+      <div class="radius-control-row">
+        <label class="radius-label" title="รัศมีการตรวจจับรอบเป้าหมาย (ม.)">
           <i class="bi bi-bullseye"></i>
-          <select v-model.number="selectedRadiusM" :disabled="detecting" class="radius-select">
-            <option :value="50">50 ม.</option>
-            <option :value="100">100 ม.</option>
-            <option :value="120">120 ม. (มาตรฐาน)</option>
-            <option :value="200">200 ม.</option>
-            <option :value="300">300 ม.</option>
-          </select>
+          <span>รัศมีตรวจจับ:</span>
         </label>
-        <button
-          type="button"
-          class="run-detect-btn"
-          :disabled="detecting || !selectedTargetId"
-          :title="detecting ? 'กำลังจับภาพและประมวลผลโมเดล building-seg.pt' : 'ตรวจจับอาคารรอบเป้าหมายที่เลือก'"
-          @click="onRunDetection"
-        >
-          <i class="bi" :class="detecting ? 'bi-hourglass-split spin' : 'bi-radar'"></i>
-          <span>{{ detecting ? 'กำลังตรวจจับอาคาร…' : 'ตรวจจับอาคาร' }}</span>
-        </button>
+        <select v-model.number="selectedRadiusM" :disabled="detecting" class="radius-select">
+          <option :value="50">50 ม.</option>
+          <option :value="100">100 ม.</option>
+          <option :value="120">120 ม. (มาตรฐาน)</option>
+          <option :value="200">200 ม.</option>
+          <option :value="300">300 ม.</option>
+        </select>
       </div>
+
+      <button
+        type="button"
+        class="run-detect-btn"
+        :disabled="detecting || !selectedTargetId"
+        :title="detecting ? 'กำลังจับภาพและประมวลผลโมเดล building-seg.pt' : 'ตรวจจับอาคารรอบเป้าหมายที่เลือก'"
+        @click="onRunDetection"
+      >
+        <i class="bi" :class="detecting ? 'bi-hourglass-split spin' : 'bi-radar'"></i>
+        <span>{{ detecting ? 'กำลังตรวจจับอาคาร…' : 'ตรวจจับอาคาร' }}</span>
+      </button>
     </div>
 
     <p v-if="!filteredDetections.length" class="empty">
@@ -127,6 +129,7 @@ export default {
       emit('run-detection', {
         radiusM: selectedRadiusM.value,
         coordinateId: props.selectedCoordinateId,
+        model: 'Building Detector',
       })
     }
 
@@ -146,66 +149,51 @@ export default {
     const filteredDetections = computed(() => {
       const list = props.detections || []
       if (!props.selectedTargetId) return []
-      let rows = list.filter((d) => d.targetCardId === props.selectedTargetId)
-      if (props.selectedCoordinateId) {
-        const scoped = rows.filter(
-          (d) => d.targetCoordinateId === props.selectedCoordinateId,
-        )
-        if (scoped.length) rows = scoped
+
+      const targetDetections = list.filter(
+        (x) => x.targetCardId === props.selectedTargetId,
+      )
+
+      if (
+        props.targetLat == null ||
+        props.targetLng == null ||
+        targetDetections.length === 0
+      ) {
+        return targetDetections
       }
 
-      if (rows.length > 0) {
-        return rows.map((item) => {
-          if (
-            props.targetLat != null &&
-            props.targetLng != null &&
-            item.lat != null &&
-            item.lng != null
-          ) {
-            const dist = distanceM(props.targetLat, props.targetLng, item.lat, item.lng)
-            const risk = calculateRiskForDistance(dist, selectedRadiusM.value)
-            return {
-              ...item,
-              risk,
-              distanceM: Math.round(dist),
-            }
-          }
-          return item
-        })
-      }
-
-      // If no detections directly registered for this target, but target coordinates exist:
-      // Find all detected objects in scenario within selectedRadiusM
-      if (props.targetLat != null && props.targetLng != null) {
-        const nearby = []
-        const seen = new Set()
-        for (const item of list) {
-          if (item.lat == null || item.lng == null) continue
-          const key = `${item.lat.toFixed(6)},${item.lng.toFixed(6)}`
-          if (seen.has(key)) continue
-          seen.add(key)
-          const dist = distanceM(props.targetLat, props.targetLng, item.lat, item.lng)
-          if (dist <= selectedRadiusM.value) {
-            const risk = calculateRiskForDistance(dist, selectedRadiusM.value)
-            nearby.push({
-              ...item,
-              risk,
-              distanceM: Math.round(dist),
-              isNearbyCarryover: true,
-            })
-          }
+      const scanRadius = selectedRadiusM.value
+      const items = []
+      for (const d of targetDetections) {
+        if (d.lat == null || d.lng == null) {
+          items.push(d)
+          continue
         }
-        return nearby
+        const dist = Math.round(
+          distanceM(props.targetLat, props.targetLng, d.lat, d.lng),
+        )
+        if (dist <= scanRadius) {
+          const isFromOtherCoord =
+            props.selectedCoordinateId &&
+            d.targetCoordinateId &&
+            d.targetCoordinateId !== props.selectedCoordinateId
+          items.push({
+            ...d,
+            distanceM: dist,
+            risk: calculateRiskForDistance(dist, scanRadius),
+            isNearbyCarryover: Boolean(isFromOtherCoord),
+          })
+        }
       }
-      return []
+      return items
     })
 
     const hasNearbyCarryover = computed(() =>
-      filteredDetections.value.some((d) => d.isNearbyCarryover),
+      filteredDetections.value.some((x) => x.isNearbyCarryover),
     )
 
     function riskLabel(risk) {
-      return RISK_LABELS[risk] || risk || '—'
+      return RISK_LABELS[risk] || RISK_LABELS.low
     }
 
     function selectObject(item) {
@@ -214,40 +202,24 @@ export default {
     }
 
     async function removeObject(item) {
-      if (!item?.id || deletingId.value) return
-      const label = item.label || 'อาคาร'
-      const ok = window.confirm(`ลบ ${label} และคำนวณทิศทางเข้า-ออกใหม่?`)
-      if (!ok) return
+      if (!item?.id) return
       deletingId.value = item.id
-      message.value = ''
       try {
-        await deleteResource('/detection-objects', item.id)
-        if (selectedObjectId.value === item.id) selectedObjectId.value = ''
-        message.value = `ลบ ${label} แล้ว`
-        emit('deleted', item)
+        await deleteResource('detection-objects', item.id)
+        emit('deleted', item.id)
       } catch (err) {
-        const text = err?.message || 'ลบอาคารไม่สำเร็จ'
-        message.value = text
-        emit('error', text)
+        emit('error', err.message || 'ลบวัตถุไม่สำเร็จ')
       } finally {
         deletingId.value = ''
       }
     }
 
-    watch(
-      () => [props.selectedTargetId, props.selectedCoordinateId],
-      () => {
-        selectedObjectId.value = ''
-        message.value = ''
-      },
-    )
-
     return {
-      filteredDetections,
-      hasNearbyCarryover,
       deletingId,
       selectedObjectId,
       message,
+      filteredDetections,
+      hasNearbyCarryover,
       riskLabel,
       selectObject,
       removeObject,
@@ -262,22 +234,32 @@ export default {
 .detection-list-panel {
   margin-top: 10px;
   padding: 10px;
-  border: 1px solid rgba(245, 158, 11, 0.3);
+  border: 1px solid rgba(245, 158, 11, 0.35);
   border-radius: 10px;
-  background: rgba(69, 40, 8, 0.22);
+  background: rgba(245, 158, 11, 0.05);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .panel-head {
   display: flex;
-  align-items: flex-start;
   justify-content: space-between;
+  align-items: center;
   gap: 8px;
   margin-bottom: 8px;
+  min-width: 0;
+}
+
+.panel-head div {
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .kicker {
   display: block;
-  color: #fbbf24;
+  color: #f59e0b;
   font-size: 0.62rem;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -288,20 +270,101 @@ export default {
   align-items: center;
   gap: 6px;
   font-size: 0.82rem;
+  line-height: 1.35;
+  word-break: break-word;
 }
 
 .panel-head em {
   display: grid;
   place-items: center;
-  min-width: 26px;
-  height: 26px;
-  padding: 0 7px;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
   border-radius: 999px;
-  background: rgba(251, 191, 36, 0.16);
-  color: #fcd34d;
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
   font-style: normal;
-  font-size: 0.7rem;
-  font-weight: 800;
+  font-size: 0.72rem;
+  font-weight: 700;
+  flex: 0 0 auto;
+}
+
+.detect-action-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.radius-control-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.radius-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #fbbf24;
+  font-size: 0.74rem;
+  font-weight: 500;
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.radius-select {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  padding: 6px 8px;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  border-radius: 6px;
+  background: #0f172a;
+  color: #f1f5f9;
+  font-size: 0.72rem;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.run-detect-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #d97706;
+  border-radius: 6px;
+  background: linear-gradient(135deg, #b45309, #d97706);
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-sizing: border-box;
+}
+
+.run-detect-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #d97706, #f59e0b);
+  border-color: #f59e0b;
+}
+
+.run-detect-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.spin {
+  display: inline-block;
+  animation: spin-kf 1s linear infinite;
 }
 
 .object-list {
@@ -309,7 +372,9 @@ export default {
   flex-direction: column;
   gap: 5px;
   max-height: 220px;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-width: 0;
 }
 
 .object-row {
@@ -321,6 +386,8 @@ export default {
   border-radius: 8px;
   background: rgba(15, 34, 54, 0.72);
   cursor: pointer;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .object-row.active,
@@ -346,104 +413,55 @@ export default {
 }
 
 .object-copy {
+  flex: 1 1 0;
   min-width: 0;
-  flex: 1 1 auto;
+  overflow: hidden;
 }
 
 .object-copy strong {
   display: block;
   overflow: hidden;
   font-size: 0.74rem;
+  line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.object-copy small,
-.empty,
-.hint {
-  color: #b7c7d6;
+.object-copy small {
+  display: block;
+  overflow: hidden;
   font-size: 0.66rem;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #b7c7d6;
 }
 
 .empty,
 .hint {
+  color: #b7c7d6;
+  font-size: 0.66rem;
+  line-height: 1.45;
+  word-break: break-word;
+  overflow-wrap: break-word;
   margin: 4px 0 0;
 }
 
 .delete-btn {
   display: grid;
   place-items: center;
-  width: 28px;
-  height: 28px;
-  flex: 0 0 28px;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 26px;
   border: 1px solid #5b3b3b;
   border-radius: 7px;
   background: rgba(220, 53, 69, 0.14);
   color: #fca5a5;
+  margin-left: auto;
 }
 
 .delete-btn:disabled {
   opacity: 0.55;
-}
-
-.detect-action-wrap {
-  margin-bottom: 8px;
-}
-
-.detect-controls-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.radius-select-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: #fbbf24;
-  font-size: 0.72rem;
-}
-
-.radius-select {
-  padding: 4px 6px;
-  border: 1px solid rgba(245, 158, 11, 0.4);
-  border-radius: 6px;
-  background: #0f172a;
-  color: #f1f5f9;
-  font-size: 0.72rem;
-  outline: none;
-}
-
-.run-detect-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  flex: 1 1 auto;
-  padding: 6px 10px;
-  border: 1px solid #d97706;
-  border-radius: 6px;
-  background: linear-gradient(135deg, #b45309, #d97706);
-  color: #fff;
-  font-size: 0.74rem;
-  font-weight: 700;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.run-detect-btn:hover:not(:disabled) {
-  background: linear-gradient(135deg, #d97706, #f59e0b);
-  border-color: #f59e0b;
-}
-
-.run-detect-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.spin {
-  display: inline-block;
-  animation: spin-kf 1s linear infinite;
 }
 
 .carryover-note {
@@ -453,6 +471,9 @@ export default {
   border: 1px solid rgba(59, 130, 246, 0.4);
   border-radius: 6px;
   font-size: 0.69rem;
+  line-height: 1.4;
+  word-break: break-word;
+  overflow-wrap: break-word;
   color: #93c5fd;
   display: flex;
   align-items: center;

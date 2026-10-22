@@ -277,7 +277,8 @@
 </template>
 
 <script>
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, onActivated, reactive, ref, watch } from 'vue'
+import { notifyDataChanged, onDataChanged, SCENARIO_STORAGE_KEY } from '../services/dataSync'
 import Header from '../components/Header.vue'
 import { databaseGroups, findEntity } from '../config/databaseCatalog'
 import { createResource, deleteResource, listResource, updateResource } from '../services/api'
@@ -291,7 +292,7 @@ export default {
     )
     const activeEntityId = ref(databaseGroups[0]?.entities[0]?.id || '')
     const scenarios = ref([])
-    const selectedScenarioId = ref('')
+    const selectedScenarioId = ref(localStorage.getItem(SCENARIO_STORAGE_KEY) || '')
     const rows = ref([])
     const loading = ref(false)
     const saving = ref(false)
@@ -643,9 +644,45 @@ export default {
       },
     )
 
+    let isRefreshing = false
+    const refreshViewData = async () => {
+      if (isRefreshing) return
+      isRefreshing = true
+      try {
+        const storedId = localStorage.getItem(SCENARIO_STORAGE_KEY)
+        if (storedId && storedId !== selectedScenarioId.value) {
+          selectedScenarioId.value = storedId
+        }
+        await loadScenarios()
+        await loadRows()
+      } catch (err) {
+        console.warn('Database refreshViewData error:', err)
+      } finally {
+        isRefreshing = false
+      }
+    }
+
+    watch(selectedScenarioId, (id) => {
+      if (id) localStorage.setItem(SCENARIO_STORAGE_KEY, id)
+      else localStorage.removeItem(SCENARIO_STORAGE_KEY)
+      notifyDataChanged('scenario')
+    })
+
     onMounted(async () => {
       await loadScenarios()
       await loadRows()
+    })
+
+    onActivated(async () => {
+      await refreshViewData()
+    })
+
+    const unsubSync = onDataChanged(async () => {
+      await refreshViewData()
+    })
+
+    onUnmounted(() => {
+      unsubSync()
     })
 
     return {

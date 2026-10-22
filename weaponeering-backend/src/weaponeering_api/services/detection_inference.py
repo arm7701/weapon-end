@@ -29,6 +29,12 @@ from weaponeering_api.schemas.detection import (
 from weaponeering_api.services import detection_service
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
+BUILDING_ANALYTICS_MODEL_NAME = "Building Analytics (AI VLM)"
+BUILDING_ANALYTICS_URL = __import__("os").environ.get(
+    "BUILDING_ANALYTICS_URL",
+    "http://127.0.0.1:8001/analyze",
+)
+
 DATA_DIR = Path(
     __import__("os").environ.get(
         "WEAPONEERING_DATA_DIR",
@@ -144,6 +150,102 @@ def run_yolo_on_bytes(
 
     model_file = result.model_path.name if result.model_path else None
     return result.objects, result.message, model_file, capture_radius
+
+
+async def run_building_analytics_on_bytes(
+    *,
+    image_bytes: bytes,
+    image_filename: str,
+    target_card_id: str,
+    lat: float,
+    lng: float,
+    radius_m: int,
+    zoom_level: int,
+) -> tuple[list[dict], str, str | None, int]:
+    zoom = max(DETECTION_ZOOM_MIN, min(DETECTION_ZOOM_MAX, zoom_level))
+    capture_radius = detection_capture_radius_m(radius_m, zoom)
+
+    import io
+    from PIL import Image
+    import httpx
+
+    image_w, image_h = 1024, 1024
+    try:
+        with Image.open(io.BytesIO(image_bytes)) as pil_img:
+            image_w, image_h = pil_img.size
+    except Exception:
+        pass
+
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            files = {"image": (image_filename or "capture.png", image_bytes, "image/png")}
+            resp = await client.post(BUILDING_ANALYTICS_URL, files=files)
+            if resp.status_code != 200:
+                raise RuntimeError(f"Building Analytics API error (HTTP {resp.status_code}): {resp.text}")
+            results = resp.json()
+    except Exception as exc:
+        raise RuntimeError(f"ไม่สามารถเชื่อมต่อ Building Analytics API ({BUILDING_ANALYTICS_URL}): {exc}") from exc
+
+    objects: list[dict] = []
+    if isinstance(results, list):
+        for idx, item in enumerate(results):
+            summary = item.get("summary") or {}
+            material = summary.get("estimated_exterior_material")
+            floors = summary.get("estimated_floors")
+            building_id = item.get("building_id") or f"Building_{idx + 1:03d}"
+
+            parts = []
+            if floors:
+                parts.append(f"{floors} ชั้น")
+            if material:
+                parts.append(str(material))
+            detail_desc = " · ".join(parts)
+            label = f"{building_id}" + (f" ({detail_desc})" if detail_desc else "")
+
+            pixel_polygon = item.get("polygon")
+            if not pixel_polygon and item.get("bbox"):
+                pixel_polygon = YoloDetectionService._bbox_to_pixel_polygon(item["bbox"])
+
+            if not pixel_polygon:
+                continue
+
+            geo_polygon = YoloDetectionService._pixel_polygon_to_lat_lng(
+                pixel_polygon,
+                image_w=image_w,
+                image_h=image_h,
+                center_lat=lat,
+                center_lng=lng,
+                radius_m=capture_radius,
+            )
+            if len(geo_polygon) < 3:
+                continue
+
+            obj_lat, obj_lng = YoloDetectionService._polygon_centroid(geo_polygon)
+            dist = YoloDetectionService._distance_m(lat, lng, obj_lat, obj_lng)
+            if YoloDetectionService._polygon_min_distance_m(lat, lng, geo_polygon) > radius_m:
+                continue
+
+            risk = YoloDetectionService._risk_for_distance(dist, radius_m)
+            confidence = summary.get("material_confidence") or 0.85
+            conf_val = round(float(confidence), 2) if isinstance(confidence, (int, float)) else 0.85
+
+            objects.append(
+                {
+                    "id": f"{target_card_id}-analytics-{len(objects) + 1}",
+                    "targetCardId": target_card_id,
+                    "label": label,
+                    "objectType": item.get("asset_type") or "building",
+                    "model": BUILDING_ANALYTICS_MODEL_NAME,
+                    "risk": risk,
+                    "confidence": conf_val,
+                    "lat": obj_lat,
+                    "lng": obj_lng,
+                    "polygon": geo_polygon,
+                }
+            )
+
+    message = f"Building Analytics ตรวจพบ {len(objects)} อาคาร (วิเคราะห์วัสดุและจำนวนชั้นแล้ว)"
+    return objects, message, "GroundingDINO+SAM+QwenVL", capture_radius
 
 
 async def execute_detection_run(

@@ -415,6 +415,8 @@ export default {
   border: 1px solid rgba(103, 232, 249, 0.28);
   border-radius: 10px;
   background: rgba(8, 24, 36, 0.72);
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .jmem-head {
@@ -422,12 +424,22 @@ export default {
   justify-content: space-between;
   align-items: flex-start;
   gap: 8px;
+  min-width: 0;
+}
+
+.jmem-head div {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
 }
 
 .jmem-head strong {
   display: block;
   margin-top: 2px;
   font-size: 0.82rem;
+  line-height: 1.35;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .kicker {
@@ -439,18 +451,25 @@ export default {
 }
 
 .reload-btn {
-  width: 30px;
-  height: 30px;
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 6px;
   background: var(--control-bg);
   color: var(--text);
+  cursor: pointer;
 }
 
 .hint,
 .muted,
 .error {
   font-size: 0.68rem;
+  line-height: 1.45;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .hint,
@@ -463,208 +482,132 @@ export default {
 }
 
 .selector {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 4px;
   font-size: 0.7rem;
   color: #cbd5e1;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .selector select {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   padding: 6px 8px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--control-bg);
   color: var(--text);
+  font-size: 0.74rem;
+  outline: none;
+  box-sizing: border-box;
 }
 
 .hero {
-  display: grid;
-  gap: 2px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
   padding: 8px;
   border-radius: 8px;
   background: rgba(103, 232, 249, 0.08);
+  border: 1px solid rgba(103, 232, 249, 0.15);
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .hero strong {
   color: #67e8f9;
   font-size: 0.8rem;
+  line-height: 1.35;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .hero small {
   color: var(--muted);
   font-size: 0.68rem;
+  line-height: 1.45;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .hero .product-desc {
   color: #c5d4e4;
   line-height: 1.4;
-}
-
-.designation {
-  display: grid;
-  gap: 6px;
-  padding: 8px;
-  border: 1px solid rgba(103, 232, 249, 0.2);
-  border-radius: 8px;
-  background: rgba(8, 24, 36, 0.45);
-}
-
-.designation.required {
-  border-color: rgba(250, 204, 21, 0.28);
-}
-
-.designation p,
-.designation li span,
-.designation .weather {
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.68rem;
-  line-height: 1.4;
-}
-
-.designation ol {
-  margin: 0;
-  padding-left: 1.1rem;
-  display: grid;
-  gap: 6px;
-}
-
-.designation li {
-  display: grid;
-  gap: 2px;
-}
-
-.designation li strong {
-  color: #e8f0f8;
-  font-size: 0.7rem;
-}
-
-.designation .weather {
-  color: #fcd34d;
-}
-
-.weapon-effects {
-  display: grid;
-  gap: 6px;
-  padding: 8px;
-  border: 1px solid rgba(248, 113, 113, 0.28);
-  border-radius: 8px;
-  background: rgba(36, 12, 12, 0.45);
-}
-
-.weapon-effects p,
-.weapon-effects li span {
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.68rem;
-  line-height: 1.4;
-}
-
-.weapon-effects ol {
-  margin: 0;
-  padding-left: 1.1rem;
-  display: grid;
-  gap: 6px;
-}
-
-.weapon-effects li {
-  display: grid;
-  gap: 2px;
-}
-
-.weapon-effects li strong {
-  color: #fecaca;
-  font-size: 0.7rem;
-}
-
-.circular-error {
-  display: grid;
-  gap: 6px;
-  padding: 8px;
-  border: 1px solid rgba(165, 180, 252, 0.32);
-  border-radius: 8px;
-  background: rgba(15, 18, 40, 0.5);
-}
-
-.circular-error p,
-.circular-error li span,
-.circular-error .application,
-.circular-error .cep-values {
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.68rem;
-  line-height: 1.4;
-}
-
-.circular-error ol {
-  margin: 0;
-  padding-left: 1.1rem;
-  display: grid;
-  gap: 6px;
-}
-
-.circular-error li {
-  display: grid;
-  gap: 2px;
-}
-
-.circular-error li strong {
-  color: #c7d2fe;
-  font-size: 0.7rem;
-}
-
-.circular-error .cep-values {
-  color: #a5b4fc;
-}
-
-.circular-error .application {
-  color: #c7d2fe;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .quantity-row {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 6px;
   padding: 8px;
   border: 1px solid rgba(103, 232, 249, 0.22);
   border-radius: 8px;
   background: rgba(8, 24, 36, 0.55);
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .quantity-field {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 4px;
   font-size: 0.7rem;
   color: #cbd5e1;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .quantity-field input {
   width: 100%;
+  max-width: 100%;
   padding: 6px 8px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--control-bg);
   color: var(--text);
+  font-size: 0.78rem;
+  outline: none;
+  box-sizing: border-box;
 }
 
 .quantity-meta {
   display: flex;
   justify-content: space-between;
-  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
   font-size: 0.66rem;
   color: var(--muted);
+  line-height: 1.35;
+  word-break: break-word;
 }
 
 .quantity-actions {
   display: flex;
   gap: 6px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .qty-btn {
-  flex: 1;
+  flex: 1 1 0;
+  min-width: 0;
   padding: 6px 8px;
   border-radius: 8px;
   font-size: 0.68rem;
+  font-weight: 600;
   border: 1px solid var(--border);
+  cursor: pointer;
+  box-sizing: border-box;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .qty-btn.primary {
@@ -688,7 +631,10 @@ export default {
   flex-direction: column;
   gap: 5px;
   max-height: 220px;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .product-row {
@@ -701,6 +647,11 @@ export default {
   background: rgba(13, 110, 253, 0.05);
   color: var(--text);
   text-align: left;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  cursor: pointer;
 }
 
 .product-row.selected {
@@ -709,56 +660,244 @@ export default {
 }
 
 .rank {
-  min-width: 28px;
+  flex: 0 0 24px;
+  min-width: 24px;
   color: #67e8f9;
   font-size: 0.72rem;
   font-weight: 700;
 }
 
 .meta {
-  display: grid;
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
   gap: 2px;
+  overflow: hidden;
 }
 
 .meta strong {
   font-size: 0.74rem;
+  line-height: 1.35;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .meta small {
   color: var(--muted);
   font-size: 0.66rem;
+  line-height: 1.35;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+.designation {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid rgba(103, 232, 249, 0.2);
+  border-radius: 8px;
+  background: rgba(8, 24, 36, 0.45);
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.designation.required {
+  border-color: rgba(250, 204, 21, 0.28);
+}
+
+.designation p,
+.designation li span,
+.designation .weather {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.68rem;
+  line-height: 1.45;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+.designation ol {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.designation li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.designation li strong {
+  color: #e8f0f8;
+  font-size: 0.7rem;
+  line-height: 1.35;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+.designation .weather {
+  color: #fcd34d;
+}
+
+.weapon-effects {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid rgba(248, 113, 113, 0.28);
+  border-radius: 8px;
+  background: rgba(36, 12, 12, 0.45);
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.weapon-effects p,
+.weapon-effects li span {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.68rem;
+  line-height: 1.45;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+.weapon-effects ol {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.weapon-effects li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.weapon-effects li strong {
+  color: #fecaca;
+  font-size: 0.7rem;
+  line-height: 1.35;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+.circular-error {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid rgba(165, 180, 252, 0.32);
+  border-radius: 8px;
+  background: rgba(15, 18, 40, 0.5);
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.circular-error p,
+.circular-error li span,
+.circular-error .application,
+.circular-error .cep-values {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.68rem;
+  line-height: 1.45;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+.circular-error ol {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.circular-error li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.circular-error li strong {
+  color: #c7d2fe;
+  font-size: 0.7rem;
+  line-height: 1.35;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+.circular-error .cep-values {
+  color: #a5b4fc;
+}
+
+.circular-error .application {
+  color: #c7d2fe;
 }
 
 .zones,
 .warnings,
 .mission {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 4px;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .zone-row {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   align-items: center;
   font-size: 0.7rem;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .zone-row i {
+  flex: 0 0 10px;
   width: 10px;
   height: 10px;
   border-radius: 2px;
   border: 1px solid rgba(255, 255, 255, 0.35);
 }
 
+.zone-row span {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .zone-row em {
+  flex: 0 0 auto;
   margin-left: auto;
   color: var(--muted);
   font-style: normal;
+  white-space: nowrap;
+  font-size: 0.68rem;
 }
 
 .warnings small,
 .mission small {
   color: var(--muted);
   font-size: 0.66rem;
+  line-height: 1.45;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 </style>

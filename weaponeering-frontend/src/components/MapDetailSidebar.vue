@@ -1,7 +1,7 @@
 <template>
   <aside class="map-detail-sidebar" :class="{ collapsed }">
     <header>
-      <div v-if="!collapsed">
+      <div v-if="!collapsed" class="header-title">
         <span class="kicker">MAP DETAIL</span>
         <h3><i class="bi bi-list-ul"></i> รายการบนแผนที่</h3>
       </div>
@@ -202,13 +202,15 @@ export default {
 .map-detail-sidebar {
   display: flex;
   flex-direction: column;
-  flex: 0 0 280px;
-  width: 280px;
+  flex: 0 0 310px;
+  width: 310px;
   height: 100%;
   min-height: 0;
   border-right: 1px solid var(--border);
   background: var(--panel-bg);
   color: var(--text);
+  box-sizing: border-box;
+  transition: width 0.2s ease, flex-basis 0.2s ease;
 }
 
 .map-detail-sidebar.collapsed {
@@ -228,6 +230,14 @@ header {
   gap: 8px;
   padding: 12px;
   border-bottom: 1px solid var(--border);
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.header-title {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
 }
 
 .kicker {
@@ -241,6 +251,9 @@ header {
 h3 {
   margin: 2px 0 0;
   font-size: 0.92rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .icon-btn {
@@ -254,6 +267,7 @@ h3 {
   border-radius: 8px;
   background: var(--control-bg);
   color: var(--text);
+  cursor: pointer;
 }
 
 .sidebar-body {
@@ -262,7 +276,9 @@ h3 {
   flex-direction: column;
   min-height: 0;
   padding: 10px;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  box-sizing: border-box;
 }
 
 .tabs {
@@ -270,12 +286,15 @@ h3 {
   grid-template-columns: repeat(3, 1fr);
   gap: 4px;
   margin-bottom: 10px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .tabs button {
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: 2px;
   padding: 7px 4px;
   border: 1px solid var(--border);
@@ -283,6 +302,10 @@ h3 {
   background: transparent;
   color: var(--muted);
   font-size: 0.68rem;
+  cursor: pointer;
+  min-width: 0;
+  box-sizing: border-box;
+  white-space: nowrap;
 }
 
 .tabs button.active {
@@ -294,30 +317,38 @@ h3 {
 .tabs em {
   font-style: normal;
   opacity: 0.85;
+  font-weight: 700;
 }
 
 .targets-panel {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .list-open-btn {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 11px 12px;
+  padding: 10px 12px;
   border: 1px solid #355574;
   border-radius: 10px;
   background: rgba(13, 110, 253, 0.12);
   color: var(--text);
   text-align: left;
   font-family: inherit;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  cursor: pointer;
 }
 
 .list-open-btn > .bi {
   color: #6ea8fe;
   font-size: 1.05rem;
+  flex: 0 0 auto;
 }
 
 .list-open-btn span {
@@ -326,15 +357,20 @@ h3 {
   flex: 1 1 auto;
   flex-direction: column;
   gap: 1px;
+  overflow: hidden;
 }
 
 .list-open-btn strong {
   font-size: 0.82rem;
+  line-height: 1.35;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .list-open-btn small {
   color: var(--muted);
   font-size: 0.68rem;
+  line-height: 1.3;
 }
 
 .list-open-btn em {
@@ -349,6 +385,7 @@ h3 {
   font-style: normal;
   font-size: 0.72rem;
   font-weight: 800;
+  flex: 0 0 auto;
 }
 
 .list {
@@ -356,7 +393,10 @@ h3 {
   flex: 1;
   flex-direction: column;
   gap: 6px;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .list-item {
@@ -369,6 +409,10 @@ h3 {
   background: rgba(13, 110, 253, 0.04);
   color: var(--text);
   text-align: left;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  cursor: pointer;
 }
 
 .list-item.active {
@@ -378,12 +422,18 @@ h3 {
 
 .list-item strong {
   font-size: 0.78rem;
+  line-height: 1.35;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .list-item small,
 .empty {
   color: var(--muted);
   font-size: 0.68rem;
+  line-height: 1.4;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .selection-card {
@@ -392,15 +442,23 @@ h3 {
   border: 1px solid rgba(255, 216, 77, 0.35);
   border-radius: 10px;
   background: rgba(255, 216, 77, 0.08);
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .selection-card strong {
   display: block;
   margin-top: 2px;
   font-size: 0.82rem;
+  line-height: 1.35;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .selection-card small {
   color: var(--muted);
+  font-size: 0.68rem;
+  display: block;
+  margin-top: 2px;
 }
 </style>

@@ -115,7 +115,8 @@
 </template>
 
 <script>
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, onActivated, ref, watch } from 'vue'
+import { notifyDataChanged, onDataChanged, SCENARIO_STORAGE_KEY } from '../services/dataSync'
 import Header from '../components/Header.vue'
 import Sidebar from '../components/Sidebar.vue'
 import MapPanel from '../components/MapPanel.vue'
@@ -129,7 +130,6 @@ import {
   targetApiToFormDraft,
 } from '../utils/targetFormMapper'
 
-const SCENARIO_STORAGE_KEY = 'weaponeering.activeScenarioId'
 
 export default {
   name: 'AnalysisView',
@@ -544,15 +544,43 @@ export default {
       }
     }
 
+    let isRefreshing = false
+    const refreshViewData = async () => {
+      if (isRefreshing) return
+      isRefreshing = true
+      try {
+        const storedId = localStorage.getItem(SCENARIO_STORAGE_KEY)
+        if (storedId && storedId !== selectedScenarioId.value) {
+          selectedScenarioId.value = storedId
+        }
+        await loadScenarios()
+        if (mapPanelRef.value?.reloadLayers) {
+          await mapPanelRef.value.reloadLayers()
+        }
+      } catch (err) {
+        console.warn('Analysis refreshViewData error:', err)
+      } finally {
+        isRefreshing = false
+      }
+    }
+
     onMounted(loadScenarios)
+    onActivated(async () => {
+      await refreshViewData()
+    })
+    const unsubSync = onDataChanged(async () => {
+      await refreshViewData()
+    })
 
     watch(selectedScenarioId, (id) => {
       if (id) localStorage.setItem(SCENARIO_STORAGE_KEY, id)
       else localStorage.removeItem(SCENARIO_STORAGE_KEY)
       clearSelection()
+      notifyDataChanged('scenario')
     })
 
     onUnmounted(() => {
+      unsubSync()
       if (resetNoticeTimer) window.clearTimeout(resetNoticeTimer)
     })
 

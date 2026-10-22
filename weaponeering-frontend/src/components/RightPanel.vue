@@ -311,17 +311,29 @@
           <span>บันทึกข้อมูล และ นำออก</span>
         </div>
         <div ref="exportMenuRef" class="action-buttons">
-          <button class="btn btn-success btn-sm w-100 mb-2" @click="openSaveModal">
+          <button
+            class="btn btn-success btn-sm w-100 mb-2"
+            :disabled="!scenarioId"
+            :title="!scenarioId ? 'กรุณาเลือก Scenario ก่อนบันทึกข้อมูล' : 'บันทึกข้อมูล'"
+            @click="openSaveModal"
+          >
             <i class="bi bi-save"></i>
             <span>บันทึกข้อมูล</span>
           </button>
           <div class="export-control">
-            <button class="btn btn-outline-primary btn-sm w-100 export-toggle" type="button" :aria-expanded="showExportMenu" @click.stop="showExportMenu = !showExportMenu">
+            <button
+              class="btn btn-outline-primary btn-sm w-100 export-toggle"
+              type="button"
+              :disabled="!scenarioId"
+              :title="!scenarioId ? 'กรุณาเลือก Scenario ก่อนนำออก' : 'นำออก'"
+              :aria-expanded="showExportMenu"
+              @click.stop="scenarioId && (showExportMenu = !showExportMenu)"
+            >
               <i class="bi bi-download"></i>
               <span>นำออก</span>
               <i class="bi bi-chevron-down export-chevron" :class="{ open: showExportMenu }"></i>
             </button>
-            <div v-if="showExportMenu" class="export-format-menu" role="menu">
+            <div v-if="showExportMenu && scenarioId" class="export-format-menu" role="menu">
               <div class="export-format-heading">
                 <strong>รูปแบบเอกสาร</strong>
                 <small>เลือกไฟล์สำหรับจัดเก็บหรือเสนอรายงาน</small>
@@ -348,9 +360,6 @@
               </button>
             </div>
           </div>
-        </div>
-        <div class="small text-muted mt-2">
-          บันทึกในระบบแล้ว: {{ savedRecordsCount }} รายการ
         </div>
       </div>
 
@@ -1028,6 +1037,7 @@ export default {
     }
 
     const openSaveModal = () => {
+      if (!props.scenarioId) return
       showSaveModal.value = true
       recorderName.value = ''
     }
@@ -1115,6 +1125,7 @@ export default {
 
     const exportData = async (format) => {
       showExportMenu.value = false
+      if (!props.scenarioId) return
       const date = new Date().toISOString().split('T')[0]
       const exportData = await buildFullExportData()
       const targetName = exportData?.mainRow?.name || exportData?.targetInfo?.name || 'เป้าหมาย'

@@ -1,4 +1,5 @@
 import { apiFetch } from './auth'
+import { notifyDataChanged } from './dataSync'
 
 const apiBase = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '')
 
@@ -28,6 +29,10 @@ export async function apiJson(path, options = {}) {
   if (!response.ok) {
     const detail = data?.detail || data?.message || response.statusText || 'คำขอไม่สำเร็จ'
     throw new Error(typeof detail === 'string' ? detail : JSON.stringify(detail))
+  }
+  const method = (options.method || 'GET').toUpperCase()
+  if (method !== 'GET' && method !== 'HEAD') {
+    notifyDataChanged(path)
   }
   return data
 }
@@ -69,5 +74,6 @@ export async function uploadForm(path, formData) {
     const detail = data?.detail || data?.message || response.statusText || 'อัปโหลดไม่สำเร็จ'
     throw new Error(typeof detail === 'string' ? detail : JSON.stringify(detail))
   }
+  notifyDataChanged(path)
   return data
 }

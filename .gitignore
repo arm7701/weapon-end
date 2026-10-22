@@ -10,3 +10,5 @@
 *.pt
 .DS_Store
 /weaponeering-backend/data/detection_sources/
+
+/building-analytics/

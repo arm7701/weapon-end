@@ -7,7 +7,7 @@
       <header class="map-toolbar">
         <div class="map-title">
           <span class="map-title-icon"><i class="bi bi-globe-asia-australia"></i></span>
-          <div>
+          <div class="map-title-text">
             <strong>แผนที่ปฏิบัติการ</strong>
             <small>{{ mapReady ? 'Desktop Cesium map' : 'กำลังโหลดแผนที่…' }}</small>
           </div>
@@ -16,7 +16,7 @@
         <div class="map-target-nav" aria-label="เลื่อนเป้าหมาย">
           <button
             type="button"
-            class="map-target-nav-btn"
+            class="map-target-nav-btn nav-arrow"
             title="เป้าหมายก่อนหน้า"
             :disabled="!canNavigateTargets"
             @click="selectPrevTarget"
@@ -30,7 +30,7 @@
           </div>
           <button
             type="button"
-            class="map-target-nav-btn"
+            class="map-target-nav-btn nav-arrow"
             title="เป้าหมายถัดไป"
             :disabled="!canNavigateTargets"
             @click="selectNextTarget"
@@ -39,30 +39,38 @@
           </button>
           <button
             type="button"
-            class="map-target-nav-btn list-btn"
-            title="นำเข้าเป้าหมายหลายรายการ"
+            class="map-target-nav-btn list-btn import-btn"
+            title="นำเข้าเป้าหมายหลายรายการ (Import Targets)"
+            aria-label="นำเข้าเป้าหมาย (Import Targets)"
             :disabled="!scenarioId"
             @click="openImportDialog"
           >
             <i class="bi bi-file-earmark-arrow-up"></i>
+            <span class="btn-text-full">นำเข้า (Import)</span>
+            <span class="btn-text-short">นำเข้า</span>
           </button>
           <button
             type="button"
             class="map-target-nav-btn list-btn"
-            title="รายการเป้าหมาย"
+            title="รายการเป้าหมายทั้งหมด"
+            aria-label="รายการเป้าหมายทั้งหมด"
             :disabled="!uniqueTargets.length"
             @click="openTargetDialog"
           >
             <i class="bi bi-list-ul"></i>
+            <span class="btn-text-full">รายการเป้าหมาย</span>
+            <span class="btn-text-short">รายการ</span>
           </button>
         </div>
 
-        <span class="map-live" :class="{ online: !!scenarioId && mapReady }">
-          <i></i> {{ scenarioId ? (mapReady ? 'LIVE' : 'LOADING') : 'NO SCENARIO' }}
-        </span>
-        <button type="button" class="map-expand-button" @click="toggleExpanded">
-          <i class="bi" :class="isExpanded ? 'bi-fullscreen-exit' : 'bi-arrows-fullscreen'"></i>
-        </button>
+        <div class="map-toolbar-actions">
+          <span class="map-live" :class="{ online: !!scenarioId && mapReady }">
+            <i></i> {{ scenarioId ? (mapReady ? 'LIVE' : 'LOADING') : 'NO SCENARIO' }}
+          </span>
+          <button type="button" class="map-expand-button" :title="isExpanded ? 'ย่อหน้าต่างแผนที่' : 'ขยายเต็มหน้าจอ'" @click="toggleExpanded">
+            <i class="bi" :class="isExpanded ? 'bi-fullscreen-exit' : 'bi-arrows-fullscreen'"></i>
+          </button>
+        </div>
       </header>
 
       <div v-if="jmemBannerText" class="map-jmem-banner" title="สรุปสินค้าจาก JMEM ของเป้าหมายที่เลือก">
@@ -702,7 +710,7 @@ export default {
         api.fitToDetectionArea?.(target.lat, target.lng, captureRadius)
         detectionMessage.value = `รอโหลดภาพ (view ${captureRadius} ม.)…`
         await new Promise((r) => setTimeout(r, 3200 + zoomVal * 350))
-        detectionMessage.value = 'กำลังจับภาพและรัน YOLO (building-seg.pt)…'
+        detectionMessage.value = `กำลังจับภาพและประมวลผลด้วย ${modelVal}…`
         const blob = await captureIframeSquareBlob()
         const form = new FormData()
         form.append('scenario_id', props.scenarioId)
@@ -1060,6 +1068,8 @@ export default {
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
 }
 .map-panel {
+  container-type: inline-size;
+  container-name: mappanel;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -1085,56 +1095,67 @@ export default {
   display: flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 12px;
   border-bottom: 1px solid var(--border);
   background: rgba(8, 20, 40, 0.95);
+  min-width: 0;
+  box-sizing: border-box;
 }
 .map-title {
   display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
-  flex: 0 1 220px;
+  flex: 0 0 auto;
 }
 .map-title-icon {
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
   border-radius: 8px;
   background: rgba(13, 110, 253, 0.18);
   color: #6ea8fe;
 }
+.map-title-text {
+  min-width: 0;
+}
 .map-title strong {
   display: block;
-  font-size: 0.86rem;
+  font-size: 0.84rem;
+  white-space: nowrap;
 }
 .map-title small {
+  display: block;
   color: var(--muted);
   font-size: 0.68rem;
+  white-space: nowrap;
 }
 .map-target-nav {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  z-index: 2;
   display: flex;
   align-items: center;
-  gap: 8px;
-  max-width: min(460px, calc(100% - 280px));
-  transform: translate(-50%, -50%);
+  justify-content: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 580px;
+  margin: 0 4px;
 }
 .map-target-nav-btn {
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
-  flex: 0 0 32px;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
   border: 1px solid #355574;
   border-radius: 8px;
   background: #0f2236;
   color: #c8ddf3;
+  cursor: pointer;
+  transition: all 0.15s ease;
 }
 .map-target-nav-btn:disabled {
   opacity: 0.35;
@@ -1144,12 +1165,50 @@ export default {
   border-color: #4f86bd;
   background: #143049;
 }
+.map-target-nav-btn.list-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: auto;
+  min-width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  padding: 0 9px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.map-target-nav-btn.list-btn .btn-text-short {
+  display: none;
+}
+.map-target-nav-btn.list-btn .btn-text-full {
+  display: inline;
+}
+.map-target-nav-btn.list-btn i {
+  font-size: 0.85rem;
+  color: #6ea8fe;
+}
+.map-target-nav-btn.list-btn:hover:not(:disabled) i {
+  color: #ffffff;
+}
+.map-target-nav-btn.import-btn {
+  border-color: #2e6194;
+  background: #112d4a;
+  color: #d8e8f8;
+}
+.map-target-nav-btn.import-btn:hover:not(:disabled) {
+  border-color: #4b91f7;
+  background: #19436e;
+  color: #ffffff;
+}
 .map-target-current {
-  min-width: 0;
-  flex: 1 1 auto;
-  padding: 4px 12px;
+  min-width: 48px;
+  max-width: 160px;
+  flex: 0 1 140px;
+  padding: 3px 8px;
   border: 1px solid rgba(81, 140, 201, 0.35);
-  border-radius: 10px;
+  border-radius: 9px;
   background: rgba(13, 40, 68, 0.88);
   text-align: center;
 }
@@ -1157,7 +1216,7 @@ export default {
   display: block;
   overflow: hidden;
   color: #f3f8ff;
-  font-size: 0.92rem;
+  font-size: 0.88rem;
   font-weight: 800;
   letter-spacing: 0.01em;
   text-overflow: ellipsis;
@@ -1167,17 +1226,25 @@ export default {
   display: block;
   margin-top: 1px;
   color: #8fb4d8;
-  font-size: 0.66rem;
+  font-size: 0.65rem;
   font-weight: 700;
+  white-space: nowrap;
+}
+.map-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  margin-left: auto;
 }
 .map-live {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  margin-left: auto;
+  gap: 5px;
   color: #94a3b8;
   font-size: 0.68rem;
   font-weight: 700;
+  white-space: nowrap;
 }
 .map-live.online {
   color: #81d9aa;
@@ -1187,6 +1254,92 @@ export default {
   height: 7px;
   border-radius: 50%;
   background: currentColor;
+}
+
+/* Container Queries for responsive map toolbar inside flexible panels */
+@container mappanel (max-width: 920px) {
+  .map-title small {
+    display: none;
+  }
+  .map-target-nav-btn.list-btn .btn-text-full {
+    display: none;
+  }
+  .map-target-nav-btn.list-btn .btn-text-short {
+    display: inline;
+  }
+  .map-target-nav-btn.list-btn {
+    padding: 0 7px;
+  }
+}
+@container mappanel (max-width: 740px) {
+  .map-title-icon {
+    display: none;
+  }
+  .map-toolbar {
+    gap: 6px;
+    padding: 5px 8px;
+  }
+  .map-target-nav {
+    gap: 4px;
+    margin: 0 2px;
+  }
+  .map-target-current {
+    flex: 0 1 110px;
+    max-width: 120px;
+    padding: 2px 6px;
+  }
+  .map-target-current strong {
+    font-size: 0.8rem;
+  }
+  .map-toolbar-actions {
+    gap: 5px;
+  }
+  .map-live {
+    font-size: 0.62rem;
+  }
+}
+@container mappanel (max-width: 580px) {
+  .map-title-text strong {
+    display: none;
+  }
+  .map-title-icon {
+    display: grid;
+  }
+  .map-target-nav-btn.list-btn .btn-text-short {
+    display: none;
+  }
+  .map-target-nav-btn.list-btn {
+    padding: 0;
+    width: 30px;
+  }
+  .map-target-current {
+    flex: 0 1 80px;
+    max-width: 90px;
+  }
+}
+
+/* Fallback media queries */
+@media (max-width: 1100px) {
+  .map-title small {
+    display: none;
+  }
+}
+@media (max-width: 900px) {
+  .map-target-nav-btn.list-btn .btn-text-full {
+    display: none;
+  }
+  .map-target-nav-btn.list-btn .btn-text-short {
+    display: inline;
+  }
+}
+@media (max-width: 680px) {
+  .map-target-nav-btn.list-btn .btn-text-short {
+    display: none;
+  }
+  .map-target-nav-btn.list-btn {
+    padding: 0;
+    width: 30px;
+  }
 }
 .map-jmem-banner {
   display: flex;

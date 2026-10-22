@@ -218,24 +218,33 @@
             </button>
           </div>
           <div class="material-grid">
-            <label
+            <div
               v-for="param in materialSpec.params"
               :key="param.key"
-              class="field-shell material-field"
-              :class="{ wide: param.type === 'text' }"
+              class="material-param-card"
+              :class="{ 'full-width': isFullWidthParam(param) }"
             >
-              <em>{{ param.label }}</em>
+              <div class="material-param-label">
+                <span class="label-text">{{ param.label }}</span>
+                <span v-if="param.unit" class="unit-text">{{ param.unit }}</span>
+              </div>
               <input
                 v-if="param.type === 'number'"
                 v-model.number="formData.materialStrength[param.key]"
                 type="number"
                 min="0"
                 step="any"
+                class="material-param-input"
                 :placeholder="param.defaultValue != null ? String(param.defaultValue) : '-'"
               />
-              <input v-else v-model="formData.materialStrength[param.key]" type="text" placeholder="-" />
-              <span v-if="param.unit">{{ param.unit }}</span>
-            </label>
+              <input
+                v-else
+                v-model="formData.materialStrength[param.key]"
+                type="text"
+                class="material-param-input"
+                placeholder="-"
+              />
+            </div>
           </div>
           <div class="material-summary">
             <i class="bi bi-info-circle"></i>
@@ -678,6 +687,10 @@ export default {
       }
     }
 
+    const isFullWidthParam = (param) => {
+      return param.type === 'text' || (param.label && param.label.length > 4)
+    }
+
     const selectStructure = (type) => {
       setStructure(type.name)
       structureDropdown.value?.removeAttribute('open')
@@ -890,6 +903,7 @@ export default {
       materialSpec,
       fcChoices,
       materialSummary,
+      isFullWidthParam,
       coordinateText,
       coordinateStatus,
       detectedCoordinateFormat,
@@ -1484,49 +1498,87 @@ export default {
 .material-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
+  gap: 8px;
+  margin-top: 6px;
 }
 
-.material-field {
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  min-height: 34px;
-  margin: 0;
+.material-param-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
 }
 
-.material-field.wide {
+.material-param-card.full-width {
   grid-column: 1 / -1;
 }
 
-.material-field em {
-  padding: 0 4px 0 8px;
-  color: #6ea8fe;
-  font-size: 0.72rem;
-  font-style: normal;
+.material-param-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  line-height: 1.2;
+}
+
+.material-param-label .label-text {
+  font-size: 0.73rem;
   font-weight: 600;
+  color: #6ea8fe;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.material-field input {
-  padding: 6px 4px;
-  font-size: 0.8rem;
+.material-param-label .unit-text {
+  font-size: 0.65rem;
+  font-weight: 500;
+  color: #94a3b8;
+  background: rgba(148, 163, 184, 0.12);
+  padding: 1px 5px;
+  border-radius: 3px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
-.material-field input::-webkit-inner-spin-button,
-.material-field input::-webkit-outer-spin-button {
+.material-param-input {
+  width: 100% !important;
+  height: 36px !important;
+  min-height: 36px !important;
+  padding: 6px 10px !important;
+  background: var(--control-bg, #0d1b2a) !important;
+  border: 1px solid var(--control-border, #1e293b) !important;
+  border-radius: 6px !important;
+  outline: none !important;
+  color: var(--text, #f8fafc) !important;
+  font-size: 0.82rem !important;
+  font-family: inherit !important;
+  box-shadow: none !important;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease !important;
+}
+
+.material-param-input:focus {
+  border-color: #0d6efd !important;
+  box-shadow: 0 0 0 2px rgba(13, 110, 253, 0.25) !important;
+}
+
+.material-param-input::-webkit-inner-spin-button,
+.material-param-input::-webkit-outer-spin-button {
   display: none;
   margin: 0;
   appearance: none;
 }
 
-.material-field input[type='number'] {
+.material-param-input[type='number'] {
   appearance: textfield;
   -moz-appearance: textfield;
 }
 
-.material-field > span {
-  padding: 0 6px;
-  font-size: 0.62rem;
-  letter-spacing: 0;
+:global(body.light-theme .material-param-input) {
+  background: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
 }
 
 .material-summary {
@@ -1622,9 +1674,10 @@ export default {
   width: 100%;
   min-width: 0;
   padding: 7px 5px;
-  border: 0;
-  outline: 0;
-  background: transparent;
+  border: 0 !important;
+  outline: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
   color: var(--text);
   font-family: inherit;
   font-size: 0.875rem;
@@ -1662,13 +1715,14 @@ export default {
 .textarea-shell textarea {
   width: 100%;
   padding: 9px 10px;
-  border: 0;
-  outline: 0;
-  resize: vertical;
-  background: transparent;
+  border: 0 !important;
+  outline: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
   color: var(--text);
   font-family: inherit;
   font-size: 0.875rem;
+  resize: vertical;
 }
 
 .upload-panel {

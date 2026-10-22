@@ -329,7 +329,16 @@
                             <i class="bi bi-eye"></i> ดู
                           </button>
                           <div class="dropdown report-export-dropdown">
-                            <button class="btn btn-sm btn-outline-success dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="ส่งออกรายงาน" @click.stop>
+                            <button
+                              class="btn btn-sm btn-outline-success dropdown-toggle"
+                              type="button"
+                              data-bs-toggle="dropdown"
+                              data-bs-boundary="viewport"
+                              data-bs-popper-config='{"strategy":"fixed"}'
+                              aria-expanded="false"
+                              aria-label="ส่งออกรายงาน"
+                              @click.stop
+                            >
                               <i class="bi bi-download"></i> นำออก
                             </button>
                             <ul class="dropdown-menu dropdown-menu-dark dropdown-menu-end export-format-dropdown" @click.stop>
@@ -469,7 +478,8 @@
 </template>
 
 <script>
-import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onMounted, onActivated, onBeforeUnmount } from 'vue'
+import { notifyDataChanged, onDataChanged, SCENARIO_STORAGE_KEY } from '../services/dataSync'
 import Header from '../components/Header.vue'
 import { exportService } from '../services/exportService'
 import { deleteResource, listResource } from '../services/api'
@@ -485,7 +495,6 @@ import {
 import { buildJmemAnalysisText } from '../utils/targetFormMapper'
 import { buildScenarioSummary } from '../utils/reportData'
 
-const SCENARIO_STORAGE_KEY = 'weaponeering.activeScenarioId'
 
 export default {
   name: 'ReportsView',
@@ -969,14 +978,41 @@ export default {
       closeAnalysisResult()
       cancelDeleteReport()
     }
+    let isRefreshing = false
+    const refreshViewData = async () => {
+      if (isRefreshing) return
+      isRefreshing = true
+      try {
+        const storedId = localStorage.getItem(SCENARIO_STORAGE_KEY)
+        if (storedId && storedId !== selectedScenarioId.value) {
+          selectedScenarioId.value = storedId
+        }
+        await refreshData()
+      } catch (err) {
+        console.warn('Reports refreshViewData error:', err)
+      } finally {
+        isRefreshing = false
+      }
+    }
+
     onMounted(async () => {
       document.addEventListener('click', closeFilterDropdown)
       window.addEventListener('keydown', handleKeydown)
       await refreshData()
     })
+
+    onActivated(async () => {
+      await refreshViewData()
+    })
+
+    const unsubSync = onDataChanged(async () => {
+      await refreshViewData()
+    })
+
     onBeforeUnmount(() => {
       document.removeEventListener('click', closeFilterDropdown)
       window.removeEventListener('keydown', handleKeydown)
+      unsubSync()
     })
 
     return {
@@ -2237,9 +2273,37 @@ export default {
 .importance-badge.medium { background: rgba(255, 193, 7, 0.16); color: #ffd14f; }
 .importance-badge.general { background: rgba(25, 135, 84, 0.18); color: #55d497; }
 
-.report-table-block { overflow: hidden; border: 1px solid #2b4056; border-radius: 10px; background: #0c1723; }
-.report-table-block .table-responsive { overflow-x: auto; }
-.table-pagination { display: flex; min-height: 52px; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px; border-top: 1px solid #2b4056; background: #101e2d; }
+.report-table-block {
+  border: 1px solid #2b4056;
+  border-radius: 10px;
+  background: #0c1723;
+  overflow: visible;
+}
+.report-table-block .table-responsive {
+  overflow-x: auto;
+  overflow-y: visible;
+  min-height: 240px;
+  padding-bottom: 60px;
+}
+@media (min-width: 1200px) {
+  .report-table-block .table-responsive {
+    overflow: visible;
+  }
+}
+.table-pagination {
+  display: flex;
+  min-height: 52px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border-top: 1px solid #2b4056;
+  background: #101e2d;
+  border-bottom-left-radius: 9px;
+  border-bottom-right-radius: 9px;
+  position: relative;
+  z-index: 1;
+}
 .pagination-info { display: flex; align-items: center; gap: 14px; }
 .pagination-summary { display: inline-flex; align-items: center; gap: 6px; color: #8299af; font-size: 0.66rem; white-space: nowrap; }
 .pagination-summary i { color: #6ea8fe; }
@@ -2458,6 +2522,7 @@ export default {
   border-radius: 7px;
   background: #101d2c;
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45);
+  z-index: 1065 !important;
 }
 
 .export-dropdown-header {
